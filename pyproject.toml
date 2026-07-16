@@ -110,6 +110,13 @@ module-name = "kglite.kglite"
 # symbol visibility even outside maturin builds.
 features = ["python-extension"]
 python-source = "."
+# Bundle LICENSE into the sdist. maturin auto-stamps `License-File: LICENSE`
+# into the metadata and includes LICENSE in the *wheels*, but NOT in the sdist —
+# so PyPI rejects the tarball with "License-File LICENSE does not exist in
+# distribution file". Explicitly including it (sdist only; wheels already have
+# it) makes the sdist a valid source fallback for platforms without a prebuilt
+# wheel (e.g. Linux aarch64, Windows ARM64).
+include = [{ path = "LICENSE", format = "sdist" }]
 
 [tool.ruff]
 line-length = 120
