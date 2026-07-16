@@ -3,13 +3,26 @@ requires = ["maturin>=1.4,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "kglite"
-description = "A high-performance graph database library with Python bindings written in Rust"
+# Distribution name is `kglite-angelo` (a name we own) even though this is a
+# soft-fork of upstream `kglite` (kkollsga/kglite, MIT). We publish under our own
+# name because we can't push to the `kglite` PyPI project, and because this fork
+# intentionally diverges from upstream (later upstream releases broke downstream
+# dependencies) and needs broad-platform wheels (Intel macOS, old-glibc + musl
+# Linux) that upstream's PyPI wheels don't cover. The IMPORT name stays `kglite`
+# — see `[tool.maturin] module-name` below — so downstream code (`import kglite`)
+# is unaffected. This lets consumers depend on a normal PyPI pin
+# (`kglite-angelo==<ver>`) instead of platform-conditional direct-URL wheels,
+# which PyPI forbids in package metadata.
+name = "kglite-angelo"
+description = "Broad-platform build of kglite (soft-fork) — a high-performance Rust graph database with Python bindings. Imports as `kglite`."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Kristian dF Kollsgård", email = "kkollsg@gmail.com"}
+]
+maintainers = [
+    {name = "Natasha Hirt"}
 ]
 keywords = ["graph", "database", "knowledge-graph", "rust", "high-performance", "data-science"]
 classifiers = [
@@ -71,11 +84,13 @@ embed = ["fastembed>=0.4"]
 kglite-mcp-server = "kglite.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/kkollsga/kglite"
-Repository = "https://github.com/kkollsga/kglite"
+# This fork's home; upstream is credited as the source project (MIT).
+Homepage = "https://github.com/natashahirt/kglite"
+Repository = "https://github.com/natashahirt/kglite"
+Upstream = "https://github.com/kkollsga/kglite"
 Documentation = "https://kglite.readthedocs.io"
-Changelog = "https://github.com/kkollsga/kglite/blob/main/CHANGELOG.md"
-Issues = "https://github.com/kkollsga/kglite/issues"
+Changelog = "https://github.com/natashahirt/kglite/blob/main/CHANGELOG.md"
+Issues = "https://github.com/natashahirt/kglite/issues"
 
 [tool.maturin]
 # Phase G.4 (polars-style split): the PyO3 wrapper crate moved to

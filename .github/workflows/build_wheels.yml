@@ -1,12 +1,17 @@
-name: Build and Publish Python Wheels
+name: Build and Publish Python Wheels (legacy, narrow matrix)
+
+# SUPERSEDED by `publish-kglite-angelo.yml`, which builds the broad platform
+# matrix (Intel + ARM macOS, glibc + musl Linux, Windows) plus an sdist and
+# publishes the `kglite-angelo` distribution via Trusted Publishing.
+#
+# This legacy workflow only builds a narrow matrix (ARM macOS + glibc Linux +
+# Windows) and its PyPI version-check is hardcoded to the upstream `kglite`
+# name, so it is NOT a correct publisher for `kglite-angelo`. The `push`
+# auto-trigger is removed so the distribution rename can't accidentally fire a
+# narrow-matrix publish; kept as `workflow_dispatch`-only for ad-hoc local
+# wheel builds. Prefer `publish-kglite-angelo.yml` for releases.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
-      - 'docs/**'
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch: # manual only — see note above
 
 jobs:
   version-check:
