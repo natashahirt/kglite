@@ -1,0 +1,113 @@
+name: Publish kglite-angelo to PyPI
+
+# Builds broad-compatibility abi3 wheels + an sdist for the `kglite-angelo`
+# distribution and publishes them to PyPI. This exists because angelo needs
+# platforms upstream's PyPI wheels miss (Intel macOS, old-glibc Linux, musl),
+# and because a name we own lets angelo depend on a normal PyPI pin
+# (`kglite-angelo==<ver>`) instead of direct-URL wheels (which PyPI forbids in
+# package metadata). kglite ships abi3 wheels, so one wheel per OS/arch covers
+# every supported Python (>= 3.10).
+#
+# Manual dispatch. Publishing uses PyPI Trusted Publishing (OIDC) — no API token
+# secret needed. Before the first run, register a Trusted Publisher on PyPI:
+#   PyPI -> your account -> Publishing -> Add a pending publisher
+#     PyPI Project Name: kglite-angelo
+#     Owner:             natashahirt
+#     Repository name:   kglite
+#     Workflow name:     publish-kglite-angelo.yml
+#     Environment:       (leave blank)
+# The version published is read from crates/kglite-py/Cargo.toml.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: wheel ${{ matrix.target }} (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- Linux glibc (covers every glibc distro >= 2.17) ---
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            maturin_target: x86_64
+            manylinux: "2014"
+          # --- Linux musl (Alpine/CI) ---
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            maturin_target: x86_64
+            manylinux: musllinux_1_2
+          # --- macOS Intel (the gap upstream wheels can't fill) ---
+          # Cross-compiled on Apple Silicon: GitHub's Intel runners are scarce.
+          # The macOS SDK is universal and Rust cross-compiles to x86_64 cleanly.
+          - runner: macos-14
+            target: x86_64-apple-darwin
+            maturin_target: x86_64
+            macos_deployment_target: "10.12"
+          # --- macOS Apple Silicon ---
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            maturin_target: aarch64
+            macos_deployment_target: "11.0"
+          # --- Windows ---
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            maturin_target: x64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
+        with:
+          target: ${{ matrix.maturin_target }}
+          # `manylinux` is ignored on macOS/Windows runners.
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.target }}
+          path: dist/*.whl
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish:
+    name: Publish to PyPI
+    needs: [build, sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # required for Trusted Publishing (OIDC)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "wheels-*"
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+      - name: List artifacts
+        run: find dist -type f
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
