@@ -1974,13 +1974,7 @@ pub fn load_into_graph(
     // File IMPORTS File — direct file-level dependency edges, resolved via
     // the project's `module_path → file_path` reverse index. Sibling to the
     // File → Module IMPORTS edge above; both ship per build.
-    let module_to_file: HashMap<String, String> = result
-        .files
-        .iter()
-        .filter(|f| !f.module_path.is_empty())
-        .map(|f| (f.module_path.clone(), f.path.clone()))
-        .collect();
-    let file_imports = super::other_edges::build_file_import_edges(&result.files, &module_to_file);
+    let file_imports = super::other_edges::build_file_import_edges(&result.files);
     if !file_imports.is_empty() {
         maintain::add_connections(
             graph,
