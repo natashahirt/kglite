@@ -1,0 +1,21 @@
+[toolchain]
+# Pinned deliberately, not tracking `stable`.
+#
+# CI's linters were unpinned (`dtolnay/rust-toolchain@stable`), so `main` went
+# red in 2026-08 without a line of code changing: it had not run CI for a month,
+# and the next run picked up clippy 1.97, which added `useless_borrows_in_
+# formatting` and `for_kv_map` and flagged eight pre-existing sites. A pinned
+# toolchain moves that breakage onto the PR that bumps this file, where it is
+# expected, instead of onto whichever unrelated PR happens to run first.
+#
+# This file also makes a local `cargo clippy` reproduce CI exactly, which is
+# otherwise guesswork -- diagnosing the 2026-08 failure meant discovering the CI
+# clippy version by reading job logs and installing it by hand.
+#
+# Floor: boltr 0.2 requires >= 1.91.0 (see crates/kglite-bolt-server/Cargo.toml).
+#
+# To bump: change `channel` here AND the `dtolnay/rust-toolchain@<version>` refs
+# in .github/workflows/. The "Toolchain pin drift gate" in ci.yml fails if the
+# two disagree, so they cannot silently diverge.
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
