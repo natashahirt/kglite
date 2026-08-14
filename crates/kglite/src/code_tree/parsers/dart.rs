@@ -96,14 +96,11 @@ impl DartParser {
         result: &mut ParseResult,
         file_info: &mut FileInfo,
     ) {
-        // The package root — the first `.`-segment of the module path —
-        // anchors import-URI normalisation.
-        let pkg_root = module_path.split('.').next().unwrap_or("");
         let mut cursor = root.walk();
         for child in root.named_children(&mut cursor) {
             match child.kind() {
                 "import_or_export" => {
-                    if let Some(target) = Self::extract_import(child, source, pkg_root) {
+                    if let Some(target) = Self::extract_import(child, source, module_path) {
                         file_info.imports.push(target);
                     }
                 }
@@ -155,10 +152,10 @@ impl DartParser {
     /// the synthetic module-path scheme so import edges resolve. Both
     /// directions create a file-level dependency, so both land in
     /// `FileInfo.imports`.
-    fn extract_import(node: Node, source: &[u8], pkg_root: &str) -> Option<String> {
+    fn extract_import(node: Node, source: &[u8], module_path: &str) -> Option<String> {
         first_string_literal(node, source)
             .filter(|s| !s.is_empty())
-            .map(|uri| normalize_dart_import(&uri, pkg_root))
+            .map(|uri| normalize_dart_import(&uri, module_path))
     }
 
     /// Parse a class / mixin / extension / extension-type declaration into a
@@ -1019,29 +1016,58 @@ fn truncate_preview(text: &str) -> String {
 /// packages are left verbatim — they are genuinely external and resolve
 /// to nothing, which is correct. Relative imports and same-package
 /// `package:` URIs resolve to a project module.
-fn normalize_dart_import(uri: &str, pkg_root: &str) -> String {
+fn normalize_dart_import(uri: &str, module_path: &str) -> String {
+    // The package root — the first `.`-segment of the module path — is what a
+    // `package:` URI for our own package is named after.
+    let pkg_root = module_path.split('.').next().unwrap_or("");
     if pkg_root.is_empty() || uri.starts_with("dart:") {
         return uri.to_string();
     }
-    let path_part = match uri.strip_prefix("package:") {
+    match uri.strip_prefix("package:") {
+        // `package:<pkg>/a/b.dart` addresses `<pkg>/lib/a/b.dart`; only our own
+        // package has in-repo files to resolve against.
         Some(rest) => match rest.split_once('/') {
-            // `package:<pkg>/...` resolves only within our own package.
-            Some((pkg, p)) if pkg == pkg_root => p,
-            _ => return uri.to_string(),
+            Some((pkg, p)) if pkg == pkg_root => {
+                let dotted = dotted_dart_path(p);
+                if dotted.is_empty() {
+                    uri.to_string()
+                } else {
+                    format!("{pkg_root}.lib.{dotted}")
+                }
+            }
+            _ => uri.to_string(),
         },
-        None => uri,
-    };
-    let stem = path_part
-        .rsplit('/')
-        .next()
-        .unwrap_or(path_part)
-        .strip_suffix(".dart")
-        .unwrap_or(path_part);
-    if stem.is_empty() {
-        uri.to_string()
-    } else {
-        format!("{pkg_root}.{stem}")
+        // A bare URI is a path relative to the importing file's directory.
+        None => resolve_relative_dart_uri(uri, module_path).unwrap_or_else(|| uri.to_string()),
     }
+}
+
+/// `a/b.dart` → `a.b`, preserving directories so the result can match a file's
+/// dotted module path.
+fn dotted_dart_path(path: &str) -> String {
+    let trimmed = path.strip_suffix(".dart").unwrap_or(path);
+    trimmed
+        .split('/')
+        .filter(|s| !s.is_empty() && *s != ".")
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// Resolve a relative `import 'a/b.dart'` against the importing file's directory.
+fn resolve_relative_dart_uri(uri: &str, module_path: &str) -> Option<String> {
+    let mut parts: Vec<&str> = module_path.split('.').collect();
+    parts.pop()?; // the importing file itself -> its directory
+    let trimmed = uri.strip_suffix(".dart").unwrap_or(uri);
+    for segment in trimmed.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            other => parts.push(other),
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("."))
 }
 
 /// First `string_literal` descendant of `node`, surrounding quotes stripped.
@@ -1169,5 +1195,51 @@ impl LanguageParser for DartParser {
 
         result.files.push(file_info);
         result
+    }
+}
+
+/// Import-URI normalisation. A Dart URI names a path, and the file's module path
+/// is that path dotted, so the two only line up if directories are preserved.
+#[cfg(test)]
+mod import_uri_tests {
+    use super::normalize_dart_import;
+
+    #[test]
+    fn a_package_uri_keeps_its_directories_and_maps_through_lib() {
+        // Collapsing to the basename (`myapp.user`) matches no module path
+        // whenever the package has more than one directory level.
+        assert_eq!(
+            normalize_dart_import("package:myapp/models/user.dart", "myapp.lib.main"),
+            "myapp.lib.models.user"
+        );
+    }
+
+    #[test]
+    fn a_relative_uri_resolves_against_the_importing_file() {
+        assert_eq!(
+            normalize_dart_import("widgets/button.dart", "myapp.lib.ui.home"),
+            "myapp.lib.ui.widgets.button"
+        );
+    }
+
+    #[test]
+    fn a_relative_uri_can_walk_out_of_its_directory() {
+        assert_eq!(
+            normalize_dart_import("../models/user.dart", "myapp.lib.ui.home"),
+            "myapp.lib.models.user"
+        );
+    }
+
+    #[test]
+    fn third_party_and_sdk_uris_are_left_verbatim() {
+        // Neither has an in-repo file to point at.
+        assert_eq!(
+            normalize_dart_import("package:flutter/material.dart", "myapp.lib.main"),
+            "package:flutter/material.dart"
+        );
+        assert_eq!(
+            normalize_dart_import("dart:async", "myapp.lib.main"),
+            "dart:async"
+        );
     }
 }

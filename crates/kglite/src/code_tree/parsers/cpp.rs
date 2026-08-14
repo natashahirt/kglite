@@ -867,14 +867,70 @@ impl CppParser {
         });
     }
 
+    /// Strip a C/C++ source or header extension, matching what
+    /// `file_to_module_path` drops so the two forms can be compared.
+    fn strip_source_extension(path: &str) -> &str {
+        for ext in [".hpp", ".cpp", ".cxx", ".hxx", ".hh", ".cc", ".h", ".c"] {
+            if let Some(stem) = path.strip_suffix(ext) {
+                return stem;
+            }
+        }
+        path
+    }
+
+    /// Resolve a quoted `#include` against the including file's own directory,
+    /// which is where the compiler looks first.
+    fn resolve_relative_include(spec: &str, module_path: &str) -> Option<String> {
+        let mut parts: Vec<&str> = module_path.split('/').collect();
+        parts.pop()?; // the including file itself -> its directory
+        for segment in spec.split('/') {
+            match segment {
+                "" | "." => {}
+                ".." => {
+                    parts.pop()?;
+                }
+                other => parts.push(other),
+            }
+        }
+        let last = parts.pop()?;
+        parts.push(Self::strip_source_extension(last));
+        (!parts.is_empty()).then(|| parts.join("/"))
+    }
+
+    /// Record an `#include` target.
+    ///
+    /// `#include "..."` names a path, not a module, so it is resolved against
+    /// the including file's directory — the same treatment JS/TS relative
+    /// specifiers get. A quoted include that carries a directory component may
+    /// instead be rooted at an include directory (`#include "proj/mod.h"`), so
+    /// that form is emitted too and left for the resolver to match; a bare
+    /// `"util.h"` is almost always a sibling and gets no such alternative.
+    /// Angle-bracket includes name a search-path entry and are kept verbatim.
     fn parse_preproc_include(node: Node, source: &[u8], file_info: &mut FileInfo) {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            if matches!(child.kind(), "string_literal" | "system_lib_string") {
-                let text = node_text(child, source);
-                let trimmed = text.trim_matches(|c| c == '"' || c == '<' || c == '>');
-                file_info.imports.push(trimmed.to_string());
+            let is_quoted = match child.kind() {
+                "string_literal" => true,
+                "system_lib_string" => false,
+                _ => continue,
+            };
+            let text = node_text(child, source);
+            let spec = text.trim_matches(|c| c == '"' || c == '<' || c == '>');
+            if spec.is_empty() {
+                continue;
             }
+            let stripped = Self::strip_source_extension(spec).to_string();
+            if is_quoted {
+                if let Some(resolved) =
+                    Self::resolve_relative_include(spec, &file_info.module_path)
+                {
+                    file_info.imports.push(resolved);
+                }
+                if !spec.contains('/') {
+                    continue;
+                }
+            }
+            file_info.imports.push(stripped);
         }
     }
 
@@ -1359,6 +1415,16 @@ impl CppParser {
             "type_definition" => self.parse_typedef(node, source, module_path, rel_path, result),
             "preproc_include" => Self::parse_preproc_include(node, source, file_info),
             "preproc_def" => self.parse_preproc_def(node, source, module_path, rel_path, result),
+            // Platform-guarded includes and declarations are idiomatic, and every
+            // branch is a real dependency of the file even though only one
+            // compiles. Descend into all of them.
+            "preproc_if" | "preproc_ifdef" | "preproc_else" | "preproc_elif"
+            | "preproc_elifdef" => {
+                let mut cursor = node.walk();
+                for sub in node.children(&mut cursor) {
+                    self.parse_cpp_top_level(sub, source, module_path, rel_path, result, file_info);
+                }
+            }
             "linkage_specification" => {
                 let n_funcs = result.functions.len();
                 let mut cursor = node.walk();
@@ -1451,6 +1517,14 @@ impl CppParser {
             "type_definition" => self.parse_typedef(node, source, module_path, rel_path, result),
             "preproc_include" => Self::parse_preproc_include(node, source, file_info),
             "preproc_def" => self.parse_preproc_def(node, source, module_path, rel_path, result),
+            // See the C++ dispatcher: every guarded branch is a real dependency.
+            "preproc_if" | "preproc_ifdef" | "preproc_else" | "preproc_elif"
+            | "preproc_elifdef" => {
+                let mut cursor = node.walk();
+                for sub in node.children(&mut cursor) {
+                    self.parse_c_top_level(sub, source, module_path, rel_path, result, file_info);
+                }
+            }
             _ => {}
         }
     }
@@ -1574,5 +1648,89 @@ impl LanguageParser for CppParser {
         file_info.annotations = extract_comment_annotations(root, &source, DEFAULT_COMMENT_TYPES);
         result.files.push(file_info);
         result
+    }
+}
+
+/// `#include` handling: a quoted include names a *path* relative to the including
+/// file, so it needs the same resolution JS/TS relative specifiers get, plus the
+/// extension stripping that `file_to_module_path` applies.
+#[cfg(test)]
+mod include_resolution_tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Parse `src` as `<tmp>/proj/<rel>`, scanning from `<tmp>/proj`.
+    fn imports_of(rel: &str, src: &str) -> Vec<String> {
+        static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!("kgl_cpp_{}_{}", std::process::id(), seq));
+        let scan_root = base.join("proj");
+        let path = scan_root.join(rel);
+        std::fs::create_dir_all(path.parent().expect("has parent")).expect("mkdir");
+        std::fs::File::create(&path)
+            .expect("create")
+            .write_all(src.as_bytes())
+            .expect("write");
+        let result = CppParser::cpp().parse_file(&path, &scan_root);
+        let _ = std::fs::remove_dir_all(&base);
+        let mut out = result
+            .files
+            .first()
+            .map(|f| f.imports.clone())
+            .unwrap_or_default();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_sibling_include_resolves_relative_to_the_including_file() {
+        // Stored raw, `util.h` matches no module path: the extension is not
+        // stripped and the directory is missing.
+        let out = imports_of("src/a/b.cpp", "#include \"util.h\"\n");
+        assert!(out.contains(&"src/a/util".to_string()), "{out:?}");
+    }
+
+    #[test]
+    fn a_dotted_include_walks_out_of_its_directory() {
+        let out = imports_of("src/a/b.cpp", "#include \"../shared/types.hpp\"\n");
+        assert!(out.contains(&"src/shared/types".to_string()), "{out:?}");
+    }
+
+    #[test]
+    fn an_include_with_a_directory_also_keeps_its_root_relative_form() {
+        // `#include "proj/mod.h"` is commonly rooted at an include directory
+        // rather than the including file, so both readings are offered and the
+        // resolver matches whichever exists.
+        let out = imports_of("src/a/b.cpp", "#include \"proj/mod.h\"\n");
+        assert!(out.contains(&"src/a/proj/mod".to_string()), "{out:?}");
+        assert!(out.contains(&"proj/mod".to_string()), "{out:?}");
+    }
+
+    #[test]
+    fn a_bare_sibling_include_offers_no_root_relative_alternative() {
+        // A bare `"util.h"` is a sibling; emitting a root-level `util` too could
+        // resolve to an unrelated file at the repo root.
+        let out = imports_of("src/a/b.cpp", "#include \"util.h\"\n");
+        assert!(!out.contains(&"util".to_string()), "{out:?}");
+    }
+
+    #[test]
+    fn angle_bracket_includes_are_kept_verbatim() {
+        // These name a search-path entry, not a path relative to this file.
+        let out = imports_of("src/a/b.cpp", "#include <vector>\n#include <boost/thing.hpp>\n");
+        assert!(out.contains(&"vector".to_string()), "{out:?}");
+        assert!(out.contains(&"boost/thing".to_string()), "{out:?}");
+        assert!(!out.contains(&"src/a/vector".to_string()), "{out:?}");
+    }
+
+    #[test]
+    fn includes_inside_preprocessor_conditionals_are_found() {
+        // Platform guards are idiomatic; a top-level-only walk drops every one.
+        let out = imports_of(
+            "src/a/b.cpp",
+            "#ifdef _WIN32\n#include \"win.h\"\n#else\n#include \"posix.h\"\n#endif\n",
+        );
+        assert!(out.contains(&"src/a/win".to_string()), "{out:?}");
+        assert!(out.contains(&"src/a/posix".to_string()), "{out:?}");
     }
 }

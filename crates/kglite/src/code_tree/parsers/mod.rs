@@ -10,6 +10,7 @@ pub mod dart;
 pub mod go;
 pub mod html;
 pub mod java;
+pub mod julia;
 pub mod php;
 pub mod python;
 pub mod rust_lang;
@@ -76,6 +77,7 @@ pub const EXTENSION_MAP: &[(&str, &str)] = &[
     ("htm", "html"),
     ("css", "css"),
     ("dart", "dart"),
+    ("jl", "julia"),
 ];
 
 /// Look up a language identifier for a file path by extension.
@@ -179,6 +181,7 @@ pub fn get_parser(language: &str) -> Option<Box<dyn LanguageParser + Send + Sync
         "html" => Some(Box::new(html::HtmlParser::new())),
         "css" => Some(Box::new(css::CssParser::new())),
         "dart" => Some(Box::new(dart::DartParser::new())),
+        "julia" => Some(Box::new(julia::JuliaParser::new())),
         _ => None,
     }
 }

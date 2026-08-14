@@ -211,19 +211,19 @@ def test_graph_copy_cow_correctness_mapped():
 #: (run on each platform; the script writes whichever entry matches the
 #: current host).
 BINARY_SIZE_BASELINES = {
-    "darwin": 39_319_984,  # 0.10.26 macOS libkglite_py.dylib. Jump from the 0.10.1
-    # baseline (36,173,664, +8.6%) is dominated by 0.10.26 bundling the
-    # kglite-mcp-server *library* into the wheel (its `run` is statically linked
-    # into the extension so `pip install kglite` ships the MCP server) — that
-    # pulls mcp-methods + rmcp + hyper/hyper-util + clap + tracing-subscriber
-    # into the cdylib. They share the one kglite engine (no duplication), so on
-    # macOS (aggressive linker strip) the net add is ~3 MB. The rest is
-    # 0.10.2–0.10.25 incremental growth folded into this first recapture since
-    # 0.10.1. Measured locally via `maturin develop --release`.
-    "linux": 64_656_000,  # 0.10.26 estimate: 0.9.52 Linux .so (59,529,016) scaled by
-    # the same +8.6% as the macOS recapture. Linux has no strip so the bundled
-    # server likely adds more in absolute terms — refresh with the real value on
-    # the next CI run (the 0.10.0–0.10.25 Linux baseline was never recaptured).
+    "darwin": 45_384_176,  # 0.10.27 macOS libkglite_py.dylib. The +6,064,192 over
+    # the 0.10.26 baseline (39,319,984, +15.4%) is attributable in full to the
+    # tree-sitter-julia grammar added in 0.10.27: its rlib is 6,510,192 bytes —
+    # the LARGEST of the 16 grammars, ahead of C# (5,649,920) and Swift
+    # (4,833,528) — because Julia's surface syntax is unusually rich (a large
+    # operator table, string/command macros, broadcast and where forms). One
+    # grammar exceeding the +10% gate on its own is expected for Julia
+    # specifically and is not a sign of engine growth.
+    "linux": 74_626_000,  # 0.10.27 estimate: the 0.10.26 Linux figure (64,656,000)
+    # scaled by the same +15.4% as the macOS recapture. Linux has no strip, so a
+    # grammar's absolute add is typically larger there — refresh with the real
+    # value on the next CI run (the Linux baseline has never been measured
+    # directly).
 }
 
 
@@ -258,8 +258,16 @@ def test_binary_size_regression():
                       MCP server). It shares the one kglite engine — no
                       duplication — but pulls the server's own closure
                       (mcp-methods, rmcp, hyper/hyper-util, clap,
-                      tracing-subscriber) into the cdylib: ~3 MB net on
+                        tracing-subscriber) into the cdylib: ~3 MB net on
                       macOS after strip, more on Linux (no strip).
+      - 0.10.27:      45,384,176 bytes (≈43.3 MB, macOS .dylib).
+                      One cause: the tree-sitter-julia grammar (16th
+                      language). At 6,510,192 bytes of rlib it is the
+                      largest grammar in the set — bigger than C# and
+                      Swift — so it alone clears the +10% gate. Julia's
+                      syntax is unusually broad (large operator table,
+                      string/command macros, broadcast + `where`
+                      forms). No engine growth is involved.
 
     Raising the baseline is a deliberate act — every bump should
     be accompanied by an updated growth note above. For a precise

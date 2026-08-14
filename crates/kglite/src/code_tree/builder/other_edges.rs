@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 fn get_separator(language: &str) -> &'static str {
     match language {
         "rust" | "cpp" => "::",
-        "python" | "java" | "csharp" | "dart" => ".",
+        "python" | "java" | "csharp" | "dart" | "julia" => ".",
         "php" => "\\",
         _ => "/",
     }
@@ -235,7 +235,9 @@ fn resolution_family(language: &str) -> &'static str {
         "php" => "php",
         "swift" => "swift",
         "dart" => "dart",
-        "cpp" => "cpp",
+        "julia" => "julia",
+        // C and C++ share a header namespace; an include may cross between them.
+        "c" | "cpp" => "cpp",
         _ => "other",
     }
 }
