@@ -565,7 +565,10 @@ impl PythonParser {
         for child in node.children(&mut cursor) {
             match child.kind() {
                 "import_prefix" => {
-                    dots = node_text(child, source).chars().filter(|c| *c == '.').count();
+                    dots = node_text(child, source)
+                        .chars()
+                        .filter(|c| *c == '.')
+                        .count();
                 }
                 "dotted_name" => tail = Some(node_text(child, source).to_string()),
                 _ => {}
@@ -1370,11 +1373,7 @@ mod import_extraction_tests {
         // a shared directory lets one test delete another's fixture mid-parse.
         static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "kgl_py_imp_{}_{}",
-            std::process::id(),
-            seq
-        ));
+        let dir = std::env::temp_dir().join(format!("kgl_py_imp_{}_{}", std::process::id(), seq));
         let path = dir.join("angelo").join(rel);
         std::fs::create_dir_all(path.parent().expect("has a parent")).expect("mkdir");
         let mut f = std::fs::File::create(&path).expect("create");
@@ -1409,7 +1408,10 @@ mod import_extraction_tests {
 
     #[test]
     fn relative_imports_resolve_against_the_importing_package() {
-        let imports = imports_of("pkg/sub/a.py", "from . import sibling\nfrom ..other import thing\n");
+        let imports = imports_of(
+            "pkg/sub/a.py",
+            "from . import sibling\nfrom ..other import thing\n",
+        );
         // One dot is this file's own package; two dots walk one level up.
         assert!(imports.contains(&"angelo.pkg.sub".to_string()));
         assert!(imports.contains(&"angelo.pkg.sub.sibling".to_string()));
@@ -1429,7 +1431,10 @@ mod import_extraction_tests {
     fn aliased_and_multi_target_imports_are_all_captured() {
         // `import a.b as c` hid its path behind the alias, and only the first
         // target of a comma-separated import was ever read.
-        let imports = imports_of("pkg/a.py", "import pkg.one as x, pkg.two\nimport pkg.three as y\n");
+        let imports = imports_of(
+            "pkg/a.py",
+            "import pkg.one as x, pkg.two\nimport pkg.three as y\n",
+        );
         assert!(imports.contains(&"pkg.one".to_string()));
         assert!(imports.contains(&"pkg.two".to_string()));
         assert!(imports.contains(&"pkg.three".to_string()));

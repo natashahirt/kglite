@@ -921,8 +921,7 @@ impl CppParser {
             }
             let stripped = Self::strip_source_extension(spec).to_string();
             if is_quoted {
-                if let Some(resolved) =
-                    Self::resolve_relative_include(spec, &file_info.module_path)
+                if let Some(resolved) = Self::resolve_relative_include(spec, &file_info.module_path)
                 {
                     file_info.imports.push(resolved);
                 }
@@ -1717,7 +1716,10 @@ mod include_resolution_tests {
     #[test]
     fn angle_bracket_includes_are_kept_verbatim() {
         // These name a search-path entry, not a path relative to this file.
-        let out = imports_of("src/a/b.cpp", "#include <vector>\n#include <boost/thing.hpp>\n");
+        let out = imports_of(
+            "src/a/b.cpp",
+            "#include <vector>\n#include <boost/thing.hpp>\n",
+        );
         assert!(out.contains(&"vector".to_string()), "{out:?}");
         assert!(out.contains(&"boost/thing".to_string()), "{out:?}");
         assert!(!out.contains(&"src/a/vector".to_string()), "{out:?}");

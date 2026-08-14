@@ -1302,8 +1302,8 @@ impl RustParser {
                         // An external-crate path (`serde::Deserialize`) has no
                         // in-repo target and is kept verbatim for module-grain
                         // edges; only the three relative roots are rewritten.
-                        let resolved = Self::resolve_use_path(&p, module_path, crate_prefix)
-                            .unwrap_or(p);
+                        let resolved =
+                            Self::resolve_use_path(&p, module_path, crate_prefix).unwrap_or(p);
                         file_info.imports.push(resolved);
                     }
                 }
@@ -1573,7 +1573,11 @@ mod use_resolution_tests {
         // The bug this covers: a workspace scan roots modules at `crates/`, so
         // `crate::x` written inside `crates/kglite/src` must become
         // `crate::kglite::src::x` — otherwise it matches nothing at all.
-        let out = imports_of("kglite", "code_tree/parsers/python.rs", "use crate::code_tree::models::FileInfo;\n");
+        let out = imports_of(
+            "kglite",
+            "code_tree/parsers/python.rs",
+            "use crate::code_tree::models::FileInfo;\n",
+        );
         assert!(
             out.contains(&"crate::kglite::src::code_tree::models::FileInfo".to_string()),
             "{out:?}"
@@ -1592,7 +1596,10 @@ mod use_resolution_tests {
             out.contains(&"crate::kglite::src::code_tree::models".to_string()),
             "{out:?}"
         );
-        assert!(out.contains(&"crate::kglite::src::a::helper".to_string()), "{out:?}");
+        assert!(
+            out.contains(&"crate::kglite::src::a::helper".to_string()),
+            "{out:?}"
+        );
         assert!(out.contains(&"serde::Deserialize".to_string()), "{out:?}");
         assert!(!out.iter().any(|i| i.ends_with(" as m")), "{out:?}");
     }
@@ -1641,7 +1648,10 @@ mod use_resolution_tests {
             "a/b.rs",
             "#[cfg(test)]\nmod tests {\n    use super::*;\n    use super::helper;\n}\n",
         );
-        assert!(out.contains(&"crate::kglite::src::a::b::*".to_string()), "{out:?}");
+        assert!(
+            out.contains(&"crate::kglite::src::a::b::*".to_string()),
+            "{out:?}"
+        );
         assert!(
             out.contains(&"crate::kglite::src::a::b::helper".to_string()),
             "{out:?}"
@@ -1651,7 +1661,11 @@ mod use_resolution_tests {
     #[test]
     fn external_crate_paths_are_left_verbatim() {
         // No in-repo target exists, so rewriting would invent one.
-        let out = imports_of("kglite", "a/b.rs", "use serde::Deserialize;\nuse std::path::Path;\n");
+        let out = imports_of(
+            "kglite",
+            "a/b.rs",
+            "use serde::Deserialize;\nuse std::path::Path;\n",
+        );
         assert!(out.contains(&"serde::Deserialize".to_string()), "{out:?}");
         assert!(out.contains(&"std::path::Path".to_string()), "{out:?}");
     }

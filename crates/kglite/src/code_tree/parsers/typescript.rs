@@ -1179,7 +1179,10 @@ mod specifier_tests {
             resolve("./components/Tree", "a/b/App.tsx").as_deref(),
             Some("a/b/components/Tree")
         );
-        assert_eq!(resolve("./util", "a/b/App.tsx").as_deref(), Some("a/b/util"));
+        assert_eq!(
+            resolve("./util", "a/b/App.tsx").as_deref(),
+            Some("a/b/util")
+        );
     }
 
     #[test]

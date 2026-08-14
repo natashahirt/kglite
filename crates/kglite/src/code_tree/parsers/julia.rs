@@ -176,9 +176,10 @@ impl JuliaParser {
             return None;
         }
         let mut cursor = node.walk();
-        let args = node
-            .child_by_field_name("arguments")
-            .or_else(|| node.children(&mut cursor).find(|c| c.kind() == "argument_list"))?;
+        let args = node.child_by_field_name("arguments").or_else(|| {
+            node.children(&mut cursor)
+                .find(|c| c.kind() == "argument_list")
+        })?;
         let mut found: Option<String> = None;
         Self::visit_string_literals(args, source, &mut found);
         found
@@ -291,7 +292,9 @@ impl JuliaParser {
         let mut inner = signature.named_child(0)?;
         let mut return_type = None;
         if inner.kind() == "typed_expression" {
-            return_type = inner.named_child(1).map(|n| node_text(n, source).to_string());
+            return_type = inner
+                .named_child(1)
+                .map(|n| node_text(n, source).to_string());
             inner = inner.named_child(0)?;
         }
         // `where` clauses wrap the call in another binary/where expression.
@@ -585,24 +588,32 @@ impl JuliaParser {
                     Self::import_targets(child, source, &mut file_info.imports);
                 }
                 "struct_definition" => {
-                    Self::push_type(
-                        child, source, scope, rel_path, &exports, "struct", result,
-                    );
+                    Self::push_type(child, source, scope, rel_path, &exports, "struct", result);
                 }
                 "abstract_definition" => {
-                    Self::push_type(
-                        child, source, scope, rel_path, &exports, "abstract", result,
-                    );
+                    Self::push_type(child, source, scope, rel_path, &exports, "abstract", result);
                 }
                 "primitive_definition" => {
                     Self::push_type(
-                        child, source, scope, rel_path, &exports, "primitive", result,
+                        child,
+                        source,
+                        scope,
+                        rel_path,
+                        &exports,
+                        "primitive",
+                        result,
                     );
                 }
                 "function_definition" => {
                     Self::push_function(child, source, scope, rel_path, &exports, false, result);
                     Self::walk_block(
-                        child, source, scope, module_path, rel_path, result, file_info,
+                        child,
+                        source,
+                        scope,
+                        module_path,
+                        rel_path,
+                        result,
+                        file_info,
                     );
                 }
                 "macro_definition" => {
@@ -632,7 +643,13 @@ impl JuliaParser {
                 // definition — a conditional include is idiomatic.
                 _ => {
                     Self::walk_block(
-                        child, source, scope, module_path, rel_path, result, file_info,
+                        child,
+                        source,
+                        scope,
+                        module_path,
+                        rel_path,
+                        result,
+                        file_info,
                     );
                 }
             }
@@ -803,7 +820,10 @@ mod tests {
     fn include_resolves_to_the_included_file_module_path() {
         // `include` is the only construct that states a file-to-file dependency
         // in Julia, so this is the edge that matters most.
-        let out = imports("src/Root.jl", "include(\"helpers.jl\")\ninclude(\"sub/deep.jl\")\n");
+        let out = imports(
+            "src/Root.jl",
+            "include(\"helpers.jl\")\ninclude(\"sub/deep.jl\")\n",
+        );
         assert!(out.contains(&"angelo.src.helpers".to_string()), "{out:?}");
         assert!(out.contains(&"angelo.src.sub.deep".to_string()), "{out:?}");
     }
@@ -811,13 +831,19 @@ mod tests {
     #[test]
     fn include_walks_up_out_of_its_directory() {
         let out = imports("src/inner/Mod.jl", "include(\"../shared/util.jl\")\n");
-        assert!(out.contains(&"angelo.src.shared.util".to_string()), "{out:?}");
+        assert!(
+            out.contains(&"angelo.src.shared.util".to_string()),
+            "{out:?}"
+        );
     }
 
     #[test]
     fn include_wrapped_in_joinpath_still_resolves() {
         // Idiomatic Julia wraps the path; the literal is still recoverable.
-        let out = imports("src/Root.jl", "include(joinpath(@__DIR__, \"wrapped.jl\"))\n");
+        let out = imports(
+            "src/Root.jl",
+            "include(joinpath(@__DIR__, \"wrapped.jl\"))\n",
+        );
         assert!(out.contains(&"angelo.src.wrapped".to_string()), "{out:?}");
     }
 
@@ -894,7 +920,11 @@ mod tests {
         assert!(names.contains(&"inner"), "{names:?}");
         assert!(names.contains(&"@sayhi"), "{names:?}");
 
-        let add = result.functions.iter().find(|f| f.name == "add").expect("add");
+        let add = result
+            .functions
+            .iter()
+            .find(|f| f.name == "add")
+            .expect("add");
         assert_eq!(add.return_type.as_deref(), Some("Int"));
         assert_eq!(add.docstring.as_deref(), Some("Adds."));
         // Julia has no methods-in-types, so nothing is a method.

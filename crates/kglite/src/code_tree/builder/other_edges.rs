@@ -118,7 +118,10 @@ pub fn build_contains_edges(files: &[FileInfo]) -> Vec<ContainsEdge> {
 /// so `pkg/sub/__init__.py` yields `pkg.sub` and `pkg/sub/leaf.py` yields
 /// `pkg.sub.leaf`.
 fn path_derived_module(path: &str, sep: &str) -> String {
-    let mut parts: Vec<&str> = path_stem(path).split('/').filter(|p| !p.is_empty()).collect();
+    let mut parts: Vec<&str> = path_stem(path)
+        .split('/')
+        .filter(|p| !p.is_empty())
+        .collect();
     if is_index_leaf(parts.last().copied()) {
         parts.pop();
     }
@@ -980,10 +983,7 @@ mod import_resolution_tests {
         ];
         assert_eq!(
             edges(&files),
-            vec![(
-                "app.py".to_string(),
-                "pkg/routes/__init__.py".to_string()
-            )]
+            vec![("app.py".to_string(), "pkg/routes/__init__.py".to_string())]
         );
     }
 
