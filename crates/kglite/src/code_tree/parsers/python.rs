@@ -479,28 +479,144 @@ impl PythonParser {
         out
     }
 
-    fn parse_import(node: Node, source: &[u8]) -> Option<String> {
+    /// Push every module path an import statement depends on.
+    ///
+    /// One statement can name several targets (`import a, b`), hide the path
+    /// behind an alias (`import a.b as c`), or name a submodule through its
+    /// package (`from pkg import sub`) — each of which was previously dropped or
+    /// truncated to the first bare `dotted_name`. Field-based access keeps the
+    /// module being imported *from* distinct from the names imported out of it,
+    /// which positional scanning could not do.
+    fn parse_import(
+        node: Node,
+        source: &[u8],
+        module_path: &str,
+        is_package: bool,
+        out: &mut Vec<String>,
+    ) {
         let mut cursor = node.walk();
         match node.kind() {
             "import_statement" => {
-                for child in node.children(&mut cursor) {
-                    if child.kind() == "dotted_name" {
-                        return Some(node_text(child, source).to_string());
+                for child in node.children_by_field_name("name", &mut cursor) {
+                    if let Some(name) = Self::import_target_name(child, source) {
+                        out.push(name);
                     }
                 }
-                None
             }
             "import_from_statement" => {
-                for child in node.children(&mut cursor) {
-                    match child.kind() {
-                        "dotted_name" => return Some(node_text(child, source).to_string()),
-                        "relative_import" => return None,
-                        _ => {}
+                let Some(module_node) = node.child_by_field_name("module_name") else {
+                    return;
+                };
+                let base = if module_node.kind() == "relative_import" {
+                    Self::resolve_relative_import(module_node, source, module_path, is_package)
+                } else {
+                    Some(node_text(module_node, source).to_string())
+                };
+                let Some(base) = base else { return };
+
+                // Importing from a package executes the package itself, so the
+                // base is a real dependency regardless of what is pulled out.
+                out.push(base.clone());
+                // `from pkg import sub` names a submodule as often as it names an
+                // attribute. Emitting the dotted form lets resolution land on the
+                // submodule's file when one exists, and fall through to the
+                // package when the name is only an attribute.
+                for child in node.children_by_field_name("name", &mut cursor) {
+                    if let Some(name) = Self::import_target_name(child, source) {
+                        out.push(format!("{}.{}", base, name));
                     }
                 }
-                None
             }
+            _ => {}
+        }
+    }
+
+    /// The dotted path of a single import target, unwrapping `x as y`.
+    fn import_target_name(node: Node, source: &[u8]) -> Option<String> {
+        match node.kind() {
+            "dotted_name" | "identifier" => Some(node_text(node, source).to_string()),
+            "aliased_import" => node
+                .child_by_field_name("name")
+                .map(|n| node_text(n, source).to_string()),
             _ => None,
+        }
+    }
+
+    /// Resolve `from .x import y` to an absolute module path.
+    ///
+    /// Relative imports were previously dropped, which silently erased every
+    /// intra-package dependency in codebases that prefer them. The leading dots
+    /// are counted against the importing module's own package: one dot means that
+    /// package, and each extra dot walks one level up. `__init__` files ARE their
+    /// package (`file_to_module_path` drops the `__init__` leaf), so they must not
+    /// pop a segment first — hence `is_package`.
+    fn resolve_relative_import(
+        node: Node,
+        source: &[u8],
+        module_path: &str,
+        is_package: bool,
+    ) -> Option<String> {
+        if module_path.is_empty() {
+            return None;
+        }
+        let mut cursor = node.walk();
+        let mut dots = 0usize;
+        let mut tail: Option<String> = None;
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "import_prefix" => {
+                    dots = node_text(child, source)
+                        .chars()
+                        .filter(|c| *c == '.')
+                        .count();
+                }
+                "dotted_name" => tail = Some(node_text(child, source).to_string()),
+                _ => {}
+            }
+        }
+        if dots == 0 {
+            return None;
+        }
+
+        let mut parts: Vec<&str> = module_path.split('.').collect();
+        if !is_package {
+            parts.pop(); // the module itself -> the package containing it
+        }
+        for _ in 1..dots {
+            parts.pop();
+        }
+        if parts.is_empty() {
+            return None;
+        }
+        let mut resolved = parts.join(".");
+        if let Some(tail) = tail {
+            resolved.push('.');
+            resolved.push_str(&tail);
+        }
+        Some(resolved)
+    }
+
+    /// Collect every import in the file, at any nesting depth.
+    ///
+    /// Only top-level statements used to be scanned, which missed the large share
+    /// of imports that sit inside a function body, a `TYPE_CHECKING` block, or a
+    /// `try/except ImportError` — all of which are real dependencies. Import
+    /// statements have no nested imports of their own, so recursion stops there.
+    fn collect_imports(
+        node: Node,
+        source: &[u8],
+        module_path: &str,
+        is_package: bool,
+        out: &mut Vec<String>,
+    ) {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "import_statement" | "import_from_statement" => {
+                    Self::parse_import(child, source, module_path, is_package, out);
+                }
+                _ => Self::collect_imports(child, source, module_path, is_package, out),
+            }
         }
     }
 
@@ -1030,11 +1146,6 @@ impl LanguageParser for PythonParser {
                 "class_definition" => {
                     Self::parse_class(child, &source, &module_path, &rel_path, &mut result, None);
                 }
-                "import_statement" | "import_from_statement" => {
-                    if let Some(imp) = Self::parse_import(child, &source) {
-                        file_info.imports.push(imp);
-                    }
-                }
                 "expression_statement" => {
                     let mut sub_cursor = child.walk();
                     for sub in child.children(&mut sub_cursor) {
@@ -1148,8 +1259,20 @@ impl LanguageParser for PythonParser {
             }
         }
 
+        // Imports are gathered in a separate full-tree pass rather than from the
+        // root-statement loop above, so deferred imports (inside functions,
+        // `TYPE_CHECKING`, `try/except ImportError`) are captured too.
+        let is_package = matches!(file_info.filename.as_str(), "__init__.py" | "__init__.pyi");
+        Self::collect_imports(
+            root,
+            &source,
+            &module_path,
+            is_package,
+            &mut file_info.imports,
+        );
+
         // Submodule declarations from __init__ files.
-        if matches!(file_info.filename.as_str(), "__init__.py" | "__init__.pyi") {
+        if is_package {
             if let Some(parent) = filepath.parent() {
                 let mut entries: Vec<_> = std::fs::read_dir(parent)
                     .ok()
@@ -1235,5 +1358,94 @@ mod module_path_tests {
             module_of("/tmp/demo_proj/sub/mod.py", "/tmp/demo_proj"),
             "demo_proj.sub.mod"
         );
+    }
+}
+
+#[cfg(test)]
+mod import_extraction_tests {
+    use super::PythonParser;
+    use crate::code_tree::parsers::LanguageParser;
+    use std::io::Write;
+
+    /// Parse a source string as `<root>/<rel>` and return the imports found.
+    fn imports_of(rel: &str, src: &str) -> Vec<String> {
+        // Tests run in parallel in one process, so each call needs its own root:
+        // a shared directory lets one test delete another's fixture mid-parse.
+        static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("kgl_py_imp_{}_{}", std::process::id(), seq));
+        let path = dir.join("angelo").join(rel);
+        std::fs::create_dir_all(path.parent().expect("has a parent")).expect("mkdir");
+        let mut f = std::fs::File::create(&path).expect("create");
+        f.write_all(src.as_bytes()).expect("write");
+        let parser = PythonParser::new();
+        let result = parser.parse_file(&path, &dir.join("angelo"));
+        let mut imports = result
+            .files
+            .first()
+            .map(|f| f.imports.clone())
+            .unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&dir);
+        imports.sort();
+        imports
+    }
+
+    #[test]
+    fn imports_inside_functions_and_type_checking_blocks_are_found() {
+        // Only root-level statements used to be scanned, so a deferred import —
+        // still a real dependency — was invisible.
+        let imports = imports_of(
+            "pkg/a.py",
+            "from typing import TYPE_CHECKING\n\
+             if TYPE_CHECKING:\n    import pkg.only_typed\n\n\
+             def go():\n    import pkg.deferred\n    return pkg.deferred\n\n\
+             try:\n    import pkg.optional\nexcept ImportError:\n    pass\n",
+        );
+        assert!(imports.contains(&"pkg.only_typed".to_string()));
+        assert!(imports.contains(&"pkg.deferred".to_string()));
+        assert!(imports.contains(&"pkg.optional".to_string()));
+    }
+
+    #[test]
+    fn relative_imports_resolve_against_the_importing_package() {
+        let imports = imports_of(
+            "pkg/sub/a.py",
+            "from . import sibling\nfrom ..other import thing\n",
+        );
+        // One dot is this file's own package; two dots walk one level up.
+        assert!(imports.contains(&"angelo.pkg.sub".to_string()));
+        assert!(imports.contains(&"angelo.pkg.sub.sibling".to_string()));
+        assert!(imports.contains(&"angelo.pkg.other".to_string()));
+    }
+
+    #[test]
+    fn a_package_init_resolves_relative_imports_from_itself_not_its_parent() {
+        // `__init__.py` IS its package, so a single dot must not walk up.
+        let imports = imports_of("pkg/__init__.py", "from . import inner\n");
+        assert!(imports.contains(&"angelo.pkg".to_string()));
+        assert!(imports.contains(&"angelo.pkg.inner".to_string()));
+        assert!(!imports.contains(&"angelo".to_string()));
+    }
+
+    #[test]
+    fn aliased_and_multi_target_imports_are_all_captured() {
+        // `import a.b as c` hid its path behind the alias, and only the first
+        // target of a comma-separated import was ever read.
+        let imports = imports_of(
+            "pkg/a.py",
+            "import pkg.one as x, pkg.two\nimport pkg.three as y\n",
+        );
+        assert!(imports.contains(&"pkg.one".to_string()));
+        assert!(imports.contains(&"pkg.two".to_string()));
+        assert!(imports.contains(&"pkg.three".to_string()));
+    }
+
+    #[test]
+    fn from_package_import_name_records_the_dotted_submodule_too() {
+        // `from pkg import sub` names a submodule as often as an attribute, so
+        // both the package and the dotted form must be offered to resolution.
+        let imports = imports_of("app.py", "from pkg import sub\n");
+        assert!(imports.contains(&"pkg".to_string()));
+        assert!(imports.contains(&"pkg.sub".to_string()));
     }
 }

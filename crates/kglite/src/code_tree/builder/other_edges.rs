@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 fn get_separator(language: &str) -> &'static str {
     match language {
         "rust" | "cpp" => "::",
-        "python" | "java" | "csharp" | "dart" => ".",
+        "python" | "java" | "csharp" | "dart" | "julia" => ".",
         "php" => "\\",
         _ => "/",
     }
@@ -111,21 +111,182 @@ pub fn build_contains_edges(files: &[FileInfo]) -> Vec<ContainsEdge> {
 }
 
 /// File IMPORTS Module edges — resolve each import string against known modules.
+/// The dotted/scoped module name a file is imported *by*, derived from its
+/// repo-relative path.
+///
+/// Drops the extension and any package-index leaf (`__init__`, `mod`, `index`),
+/// so `pkg/sub/__init__.py` yields `pkg.sub` and `pkg/sub/leaf.py` yields
+/// `pkg.sub.leaf`.
+fn path_derived_module(path: &str, sep: &str) -> String {
+    let mut parts: Vec<&str> = path_stem(path)
+        .split('/')
+        .filter(|p| !p.is_empty())
+        .collect();
+    if is_index_leaf(parts.last().copied()) {
+        parts.pop();
+    }
+    parts.join(sep)
+}
+
+/// The path with its file extension removed.
+fn path_stem(path: &str) -> &str {
+    match path.rfind('.') {
+        Some(i) if !path[i + 1..].contains('/') => &path[..i],
+        _ => path,
+    }
+}
+
+fn is_index_leaf(leaf: Option<&str>) -> bool {
+    matches!(leaf, Some("__init__") | Some("mod") | Some("index"))
+}
+
+/// Does this path name a directory's entry point rather than a plain module?
+fn is_package_index(path: &str) -> bool {
+    is_index_leaf(path_stem(path).rsplit('/').next())
+}
+
+/// Per-language prefix that `module_path` carries but import strings do not.
+///
+/// `file_to_module_path` roots a module at the *parent* of the scanned
+/// directory, so a repo checked out as `angelo/` gives every file a
+/// `module_path` of `angelo.pkg.mod` while its own source imports it as
+/// `pkg.mod`. Resolution then fails on every dotted candidate and collapses to
+/// the bare top-level package, which is why intra-package structure went
+/// missing. Recovering the prefix lets a candidate be retried in rooted form.
+///
+/// A repo whose `module_path` already agrees with its import strings yields no
+/// prefix, making the retry inert — this is additive, never a reinterpretation
+/// of imports that already resolve.
+fn root_prefixes(files: &[FileInfo]) -> HashMap<String, String> {
+    let mut counts: HashMap<(String, String), usize> = HashMap::new();
+    for f in files {
+        if f.module_path.is_empty() {
+            continue;
+        }
+        let sep = get_separator(&f.language);
+        let derived = path_derived_module(&f.path, sep);
+        if derived.is_empty() {
+            continue;
+        }
+        if let Some(prefix) = f.module_path.strip_suffix(&derived) {
+            let prefix = prefix.trim_end_matches(sep);
+            if !prefix.is_empty() {
+                *counts
+                    .entry((f.language.clone(), prefix.to_string()))
+                    .or_insert(0) += 1;
+            }
+        }
+    }
+    // A repo can contain stray files that derive an odd prefix; keep the one
+    // most files agree on per language.
+    let mut best: HashMap<String, (String, usize)> = HashMap::new();
+    for ((language, prefix), n) in counts {
+        let entry = best.entry(language).or_insert_with(|| (prefix.clone(), 0));
+        if n > entry.1 {
+            *entry = (prefix, n);
+        }
+    }
+    best.into_iter()
+        .map(|(language, (prefix, _))| (language, prefix))
+        .collect()
+}
+
+/// Resolve an import string by longest-prefix walk, retrying each candidate in
+/// root-prefixed form.
+///
+/// `probe` reports whether a candidate names something known. The unprefixed
+/// form is always tried first at each length, so existing resolutions are
+/// unchanged; the prefixed retry only fires where the bare candidate misses.
+fn resolve_import<'a>(
+    use_path: &str,
+    sep: &str,
+    root_prefix: Option<&str>,
+    mut probe: impl FnMut(&str) -> Option<&'a str>,
+) -> Option<&'a str> {
+    let parts: Vec<&str> = use_path.split(sep).collect();
+    for end in (1..=parts.len()).rev() {
+        let candidate = parts[..end].join(sep);
+        if let Some(hit) = probe(&candidate) {
+            return Some(hit);
+        }
+        if let Some(prefix) = root_prefix {
+            let rooted = format!("{}{}{}", prefix, sep, candidate);
+            if let Some(hit) = probe(&rooted) {
+                return Some(hit);
+            }
+        }
+    }
+    None
+}
+
+/// Languages that may resolve each other's imports.
+///
+/// A module path is only meaningful within the language that produced it, and
+/// flat `pkg.<stem>` schemes make collisions across languages easy — a
+/// `docs/animations/coordinator.html` claims the same module path as a
+/// `coordinator/__init__.py`, and resolving a Python import onto the HTML file is
+/// always wrong. JS and TS are deliberately one family: importing `./foo` from
+/// TypeScript and landing on `foo.js` is normal interop, not a collision.
+fn resolution_family(language: &str) -> &'static str {
+    match language {
+        "javascript" | "typescript" => "js",
+        "python" => "python",
+        "rust" => "rust",
+        "go" => "go",
+        "java" => "java",
+        "csharp" => "csharp",
+        "php" => "php",
+        "swift" => "swift",
+        "dart" => "dart",
+        "julia" => "julia",
+        // C and C++ share a header namespace; an include may cross between them.
+        "c" | "cpp" => "cpp",
+        _ => "other",
+    }
+}
+
+/// `(resolution family, module path) → file path`, for resolving imports to files.
+///
+/// When two files in the same family claim one module path, the package index
+/// (`__init__` / `mod` / `index`) wins — that is the precedence the language
+/// itself applies, and it keeps the choice deterministic rather than dependent on
+/// scan order.
+fn module_index(files: &[FileInfo]) -> HashMap<(&'static str, String), String> {
+    let mut index: HashMap<(&'static str, String), String> = HashMap::new();
+    for f in files {
+        if f.module_path.is_empty() {
+            continue;
+        }
+        let key = (resolution_family(&f.language), f.module_path.clone());
+        match index.entry(key) {
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(f.path.clone());
+            }
+            std::collections::hash_map::Entry::Occupied(mut slot) => {
+                if is_package_index(&f.path) {
+                    slot.insert(f.path.clone());
+                }
+            }
+        }
+    }
+    index
+}
+
 pub fn build_import_edges(files: &[FileInfo], known_modules: &HashSet<String>) -> Vec<ImportEdge> {
+    let prefixes = root_prefixes(files);
     let mut out = Vec::new();
     for f in files {
         let sep = get_separator(&f.language);
+        let root_prefix = prefixes.get(&f.language).map(String::as_str);
         for use_path in &f.imports {
-            let parts: Vec<&str> = use_path.split(sep).collect();
-            for end in (1..=parts.len()).rev() {
-                let candidate = parts[..end].join(sep);
-                if known_modules.contains(&candidate) {
-                    out.push(ImportEdge {
-                        file_path: f.path.clone(),
-                        module: candidate,
-                    });
-                    break;
-                }
+            let resolved = resolve_import(use_path, sep, root_prefix, |candidate| {
+                known_modules.get(candidate).map(String::as_str)
+            });
+            if let Some(module) = resolved {
+                out.push(ImportEdge {
+                    file_path: f.path.clone(),
+                    module: module.to_string(),
+                });
             }
         }
     }
@@ -140,24 +301,25 @@ pub fn build_import_edges(files: &[FileInfo], known_modules: &HashSet<String>) -
 /// whose `module_path` matches a prefix candidate. Self-imports are skipped.
 /// Multiple imports from the same source resolving to the same target are
 /// aggregated into a single edge whose `import_count` records the multiplicity.
-pub fn build_file_import_edges(
-    files: &[FileInfo],
-    module_to_file: &HashMap<String, String>,
-) -> Vec<FileImportEdge> {
+pub fn build_file_import_edges(files: &[FileInfo]) -> Vec<FileImportEdge> {
+    let prefixes = root_prefixes(files);
+    let module_to_file = module_index(files);
     let mut counts: HashMap<(String, String), i64> = HashMap::new();
     for f in files {
         let sep = get_separator(&f.language);
+        let root_prefix = prefixes.get(&f.language).map(String::as_str);
+        let family = resolution_family(&f.language);
         for use_path in &f.imports {
-            let parts: Vec<&str> = use_path.split(sep).collect();
-            for end in (1..=parts.len()).rev() {
-                let candidate = parts[..end].join(sep);
-                if let Some(target_file) = module_to_file.get(&candidate) {
-                    if target_file != &f.path {
-                        *counts
-                            .entry((f.path.clone(), target_file.clone()))
-                            .or_insert(0) += 1;
-                    }
-                    break;
+            let resolved = resolve_import(use_path, sep, root_prefix, |candidate| {
+                module_to_file
+                    .get(&(family, candidate.to_string()))
+                    .map(String::as_str)
+            });
+            if let Some(target_file) = resolved {
+                if target_file != f.path {
+                    *counts
+                        .entry((f.path.clone(), target_file.to_string()))
+                        .or_insert(0) += 1;
                 }
             }
         }
@@ -724,4 +886,127 @@ pub fn build_ffi_exposes_edges(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod import_resolution_tests {
+    use super::*;
+
+    fn py(path: &str, module_path: &str, imports: &[&str]) -> FileInfo {
+        FileInfo {
+            path: path.to_string(),
+            module_path: module_path.to_string(),
+            language: "python".to_string(),
+            imports: imports.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    fn edges(files: &[FileInfo]) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = build_file_import_edges(files)
+            .into_iter()
+            .map(|e| (e.source, e.target))
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn import_resolves_when_module_paths_carry_a_root_prefix() {
+        // `file_to_module_path` roots modules at the parent of the scanned
+        // directory, so a repo cloned as `angelo/` describes its own files as
+        // `angelo.pkg.mod` while importing them as `pkg.mod`. Nothing resolved
+        // before the prefix was recovered.
+        let files = vec![
+            py("pkg/a.py", "angelo.pkg.a", &["pkg.b"]),
+            py("pkg/b.py", "angelo.pkg.b", &[]),
+        ];
+        assert_eq!(
+            edges(&files),
+            vec![("pkg/a.py".to_string(), "pkg/b.py".to_string())]
+        );
+    }
+
+    #[test]
+    fn unprefixed_repos_are_unaffected() {
+        // A repo whose module paths already match its import strings must
+        // resolve exactly as before — the prefixed retry is additive only.
+        let files = vec![
+            py("pkg/a.py", "pkg.a", &["pkg.b"]),
+            py("pkg/b.py", "pkg.b", &[]),
+        ];
+        assert_eq!(
+            edges(&files),
+            vec![("pkg/a.py".to_string(), "pkg/b.py".to_string())]
+        );
+    }
+
+    #[test]
+    fn longest_prefix_still_wins_over_the_bare_package() {
+        // `pkg.b` must land on `b.py`, not collapse onto the `pkg` package.
+        let files = vec![
+            py("pkg/__init__.py", "angelo.pkg", &[]),
+            py("pkg/a.py", "angelo.pkg.a", &["pkg.b"]),
+            py("pkg/b.py", "angelo.pkg.b", &[]),
+        ];
+        let out = edges(&files);
+        assert!(out.contains(&("pkg/a.py".to_string(), "pkg/b.py".to_string())));
+        assert!(!out.contains(&("pkg/a.py".to_string(), "pkg/__init__.py".to_string())));
+    }
+
+    #[test]
+    fn imports_never_resolve_across_languages() {
+        // A flat `pkg.<stem>` module scheme lets an unrelated language claim a
+        // Python package's module path; resolving onto it is always wrong.
+        let mut html = py("docs/anim/coordinator.html", "angelo.coordinator", &[]);
+        html.language = "html".to_string();
+        let files = vec![
+            py("coordinator/__init__.py", "angelo.coordinator", &[]),
+            py("app.py", "angelo.app", &["coordinator"]),
+            html,
+        ];
+        assert_eq!(
+            edges(&files),
+            vec![("app.py".to_string(), "coordinator/__init__.py".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_package_outranks_a_module_that_shadows_its_name() {
+        // `routes/__init__.py` and `routes.py` claim one module path; the
+        // package wins, matching the language's own precedence, so the choice
+        // does not depend on scan order.
+        let files = vec![
+            py("pkg/routes.py", "angelo.pkg.routes", &[]),
+            py("pkg/routes/__init__.py", "angelo.pkg.routes", &[]),
+            py("app.py", "angelo.app", &["pkg.routes"]),
+        ];
+        assert_eq!(
+            edges(&files),
+            vec![("app.py".to_string(), "pkg/routes/__init__.py".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_file_never_imports_itself() {
+        let files = vec![py("pkg/a.py", "angelo.pkg.a", &["pkg.a"])];
+        assert!(edges(&files).is_empty());
+    }
+
+    #[test]
+    fn repeated_imports_of_one_target_aggregate_into_a_single_edge() {
+        let files = vec![
+            py("pkg/a.py", "angelo.pkg.a", &["pkg.b", "pkg.b", "pkg.b"]),
+            py("pkg/b.py", "angelo.pkg.b", &[]),
+        ];
+        let built = build_file_import_edges(&files);
+        assert_eq!(built.len(), 1);
+        assert_eq!(built[0].import_count, 3);
+    }
+
+    #[test]
+    fn third_party_imports_produce_no_edges() {
+        let files = vec![py("pkg/a.py", "angelo.pkg.a", &["numpy.linalg", "os"])];
+        assert!(edges(&files).is_empty());
+    }
 }

@@ -615,6 +615,68 @@ impl RustParser {
         }
     }
 
+    /// The module prefix that `crate::` denotes for this file.
+    ///
+    /// `crate::` is relative to the *crate* root, which is generally not the
+    /// scanned root: a workspace scan sees `crates/<pkg>/src/lib.rs`, so
+    /// `crate::foo` written inside that package means `crate::<pkg>::src::foo`
+    /// in this module scheme. The crate root is the nearest ancestor directory
+    /// holding `lib.rs` or `main.rs`; without one, `crate` is the scan root.
+    fn crate_root_prefix(filepath: &Path, src_root: &Path) -> String {
+        let mut dir = filepath.parent();
+        while let Some(d) = dir {
+            for root_file in ["lib.rs", "main.rs"] {
+                let candidate = d.join(root_file);
+                if candidate.is_file() {
+                    return Self::file_to_module_path(&candidate, src_root);
+                }
+            }
+            if d == src_root {
+                break;
+            }
+            dir = d.parent();
+        }
+        "crate".to_string()
+    }
+
+    /// Rewrite a `use` path's relative root into the absolute form that
+    /// `module_path` uses, so it can be matched against other files' modules.
+    ///
+    /// Returns `None` for a path rooted at an external crate, which has no
+    /// in-repo target to resolve against. `current_module` is the module the
+    /// `use` is written in — inside a `mod tests` block that is the nested
+    /// module, which is what makes `super::*` resolve to the enclosing file
+    /// rather than one level too high.
+    fn resolve_use_path(path: &str, current_module: &str, crate_prefix: &str) -> Option<String> {
+        if path == "crate" {
+            return Some(crate_prefix.to_string());
+        }
+        if let Some(rest) = path.strip_prefix("crate::") {
+            return Some(format!("{crate_prefix}::{rest}"));
+        }
+        if let Some(rest) = path.strip_prefix("self::") {
+            return Some(format!("{current_module}::{rest}"));
+        }
+        // Each `super::` repetition climbs one module.
+        let mut rest = path;
+        let mut ups = 0usize;
+        while let Some(stripped) = rest.strip_prefix("super::") {
+            ups += 1;
+            rest = stripped;
+        }
+        if ups == 0 {
+            return None;
+        }
+        let mut parts: Vec<&str> = current_module.split("::").collect();
+        for _ in 0..ups {
+            parts.pop()?;
+        }
+        if parts.is_empty() {
+            return None;
+        }
+        Some(format!("{}::{}", parts.join("::"), rest))
+    }
+
     fn extract_struct_fields(
         node: Node,
         source: &[u8],
@@ -1012,10 +1074,12 @@ impl RustParser {
         out
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn parse_items(
         node: Node,
         source: &[u8],
         module_path: &str,
+        crate_prefix: &str,
         rel_path: &str,
         file_info: &mut FileInfo,
         result: &mut ParseResult,
@@ -1218,15 +1282,29 @@ impl RustParser {
                     let mut uc = child.walk();
                     let mut path_text: Option<String> = None;
                     for sub in child.children(&mut uc) {
-                        if matches!(
-                            sub.kind(),
-                            "scoped_identifier" | "use_wildcard" | "scoped_use_list" | "identifier"
-                        ) {
-                            path_text = Some(node_text(sub, source).to_string());
+                        match sub.kind() {
+                            "scoped_identifier" | "use_wildcard" | "scoped_use_list"
+                            | "identifier" => {
+                                path_text = Some(node_text(sub, source).to_string());
+                            }
+                            // `use some::Path as Alias` — the dependency is the
+                            // path; the alias is local. Without this the whole
+                            // declaration is dropped.
+                            "use_as_clause" => {
+                                if let Some(p) = sub.child_by_field_name("path") {
+                                    path_text = Some(node_text(p, source).to_string());
+                                }
+                            }
+                            _ => {}
                         }
                     }
                     if let Some(p) = path_text {
-                        file_info.imports.push(p);
+                        // An external-crate path (`serde::Deserialize`) has no
+                        // in-repo target and is kept verbatim for module-grain
+                        // edges; only the three relative roots are rewritten.
+                        let resolved =
+                            Self::resolve_use_path(&p, module_path, crate_prefix).unwrap_or(p);
+                        file_info.imports.push(resolved);
                     }
                 }
                 "mod_item" => {
@@ -1250,6 +1328,7 @@ impl RustParser {
                             decl_list,
                             source,
                             &inner_path,
+                            crate_prefix,
                             rel_path,
                             file_info,
                             result,
@@ -1435,10 +1514,12 @@ impl LanguageParser for RustParser {
         // propagates into the parser walk so every contained function inherits
         // is_test=true even when the function lacks a `#[test]` attribute.
         let in_test_mod = file_info.is_test;
+        let crate_prefix = Self::crate_root_prefix(filepath, src_root);
         Self::parse_items(
             root,
             &source,
             &module_path,
+            &crate_prefix,
             &rel_path,
             &mut file_info,
             &mut result,
@@ -1447,5 +1528,153 @@ impl LanguageParser for RustParser {
         file_info.annotations = extract_comment_annotations(root, &source, DEFAULT_COMMENT_TYPES);
         result.files.push(file_info);
         result
+    }
+}
+
+/// `use`-path resolution: `crate::` / `super::` / `self::` are relative roots and
+/// must be rewritten into the absolute module scheme before they can match
+/// another file's module path.
+#[cfg(test)]
+mod use_resolution_tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Lay out a crate as `<tmp>/crates/<pkg>/src/<rel>` with a `lib.rs` marking
+    /// the crate root, scan from `<tmp>/crates`, and return the file's imports.
+    fn imports_of(pkg: &str, rel: &str, src: &str) -> Vec<String> {
+        static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let base = std::env::temp_dir().join(format!("kgl_rs_{}_{}", std::process::id(), seq));
+        let scan_root = base.join("crates");
+        let crate_src = scan_root.join(pkg).join("src");
+        std::fs::create_dir_all(&crate_src).expect("mkdir");
+        std::fs::write(crate_src.join("lib.rs"), b"// crate root\n").expect("lib.rs");
+
+        let path = crate_src.join(rel);
+        std::fs::create_dir_all(path.parent().expect("has parent")).expect("mkdir");
+        std::fs::File::create(&path)
+            .expect("create")
+            .write_all(src.as_bytes())
+            .expect("write");
+
+        let result = RustParser::new().parse_file(&path, &scan_root);
+        let _ = std::fs::remove_dir_all(&base);
+        let mut out = result
+            .files
+            .first()
+            .map(|f| f.imports.clone())
+            .unwrap_or_default();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn crate_paths_resolve_to_the_crate_root_not_the_scan_root() {
+        // The bug this covers: a workspace scan roots modules at `crates/`, so
+        // `crate::x` written inside `crates/kglite/src` must become
+        // `crate::kglite::src::x` — otherwise it matches nothing at all.
+        let out = imports_of(
+            "kglite",
+            "code_tree/parsers/python.rs",
+            "use crate::code_tree::models::FileInfo;\n",
+        );
+        assert!(
+            out.contains(&"crate::kglite::src::code_tree::models::FileInfo".to_string()),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn aliased_uses_record_their_path_not_their_alias() {
+        // `use_as_clause` was unhandled, so every aliased import was dropped.
+        let out = imports_of(
+            "kglite",
+            "a/b.rs",
+            "use crate::code_tree::models as m;\nuse super::helper as h;\nuse serde::Deserialize as De;\n",
+        );
+        assert!(
+            out.contains(&"crate::kglite::src::code_tree::models".to_string()),
+            "{out:?}"
+        );
+        assert!(
+            out.contains(&"crate::kglite::src::a::helper".to_string()),
+            "{out:?}"
+        );
+        assert!(out.contains(&"serde::Deserialize".to_string()), "{out:?}");
+        assert!(!out.iter().any(|i| i.ends_with(" as m")), "{out:?}");
+    }
+
+    #[test]
+    fn bare_crate_resolves_to_the_crate_root() {
+        assert_eq!(
+            RustParser::resolve_use_path("crate", "crate::kglite::src::a", "crate::kglite::src"),
+            Some("crate::kglite::src".to_string())
+        );
+    }
+
+    #[test]
+    fn super_climbs_one_module_per_repetition() {
+        let out = imports_of(
+            "kglite",
+            "a/b/c.rs",
+            "use super::sibling::Thing;\nuse super::super::uncle::Other;\n",
+        );
+        assert!(
+            out.contains(&"crate::kglite::src::a::b::sibling::Thing".to_string()),
+            "{out:?}"
+        );
+        assert!(
+            out.contains(&"crate::kglite::src::a::uncle::Other".to_string()),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn self_resolves_to_the_current_module() {
+        let out = imports_of("kglite", "a/b.rs", "use self::inner::Thing;\n");
+        assert!(
+            out.contains(&"crate::kglite::src::a::b::inner::Thing".to_string()),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn super_inside_a_test_mod_resolves_to_the_enclosing_file() {
+        // `use super::*` in a `mod tests` block is the standard Rust test idiom.
+        // Resolving it against the file's module rather than the nested one
+        // would climb a level too far and point at a sibling.
+        let out = imports_of(
+            "kglite",
+            "a/b.rs",
+            "#[cfg(test)]\nmod tests {\n    use super::*;\n    use super::helper;\n}\n",
+        );
+        assert!(
+            out.contains(&"crate::kglite::src::a::b::*".to_string()),
+            "{out:?}"
+        );
+        assert!(
+            out.contains(&"crate::kglite::src::a::b::helper".to_string()),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn external_crate_paths_are_left_verbatim() {
+        // No in-repo target exists, so rewriting would invent one.
+        let out = imports_of(
+            "kglite",
+            "a/b.rs",
+            "use serde::Deserialize;\nuse std::path::Path;\n",
+        );
+        assert!(out.contains(&"serde::Deserialize".to_string()), "{out:?}");
+        assert!(out.contains(&"std::path::Path".to_string()), "{out:?}");
+    }
+
+    #[test]
+    fn super_cannot_climb_out_of_the_scan_root() {
+        // Popping past the root would otherwise yield an empty, matches-anything
+        // prefix; the path is dropped instead.
+        let resolved = RustParser::resolve_use_path("super::super::x", "crate::a", "crate");
+        assert_eq!(resolved, None);
     }
 }

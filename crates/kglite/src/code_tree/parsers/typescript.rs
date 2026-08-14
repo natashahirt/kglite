@@ -368,6 +368,73 @@ impl JstsParser {
         }
     }
 
+    /// Record the module specifier of an `import`/`export ... from` statement.
+    ///
+    /// Relative specifiers used to be discarded, which erased essentially every
+    /// first-party edge in a JS/TS project — `./` and `../` imports are the norm
+    /// there, and bare specifiers are almost always third-party packages. They are
+    /// resolved here against the importing file's own directory so they come out in
+    /// the same repo-relative form `file_to_module_path` produces, letting the
+    /// shared resolver match them without any language-specific handling.
+    fn record_module_specifier(
+        node: Node,
+        source: &[u8],
+        rel_path: &str,
+        file_info: &mut FileInfo,
+    ) {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() != "string" {
+                continue;
+            }
+            let text = node_text(child, source);
+            let spec = text.trim_matches(|c| c == '\'' || c == '"');
+            if spec.starts_with('.') {
+                if let Some(resolved) = Self::resolve_relative_specifier(spec, rel_path) {
+                    file_info.imports.push(resolved);
+                }
+            } else {
+                file_info.imports.push(spec.to_string());
+            }
+            break;
+        }
+    }
+
+    /// Turn a relative specifier into a repo-relative module path.
+    ///
+    /// Mirrors `file_to_module_path`'s output shape: `/`-joined, extension-free,
+    /// and with a trailing `index` dropped, so `./components/Tree` resolves against
+    /// `a/b/App.tsx` to `a/b/components/Tree`. Specifiers may carry an extension
+    /// (`./x.js`, which TypeScript maps onto `x.ts`); it is stripped rather than
+    /// trusted.
+    fn resolve_relative_specifier(spec: &str, rel_path: &str) -> Option<String> {
+        let mut parts: Vec<&str> = rel_path.split('/').collect();
+        parts.pop(); // the importing file itself -> its directory
+
+        for segment in spec.split('/') {
+            match segment {
+                "" | "." => {}
+                ".." => {
+                    parts.pop()?;
+                }
+                other => parts.push(other),
+            }
+        }
+
+        let last = parts.pop()?;
+        let stem = match last.rfind('.') {
+            Some(i) if i > 0 => &last[..i],
+            _ => last,
+        };
+        if stem != "index" {
+            parts.push(stem);
+        }
+        if parts.is_empty() {
+            return None;
+        }
+        Some(parts.join("/"))
+    }
+
     fn get_decorators(node: Node, source: &[u8]) -> Vec<String> {
         let mut decs = Vec::new();
         let mut sibling = node.prev_named_sibling();
@@ -823,6 +890,9 @@ impl JstsParser {
             }
             "enum_declaration" => self.parse_enum(node, source, module_path, rel_path, result),
             "export_statement" => {
+                // `export { x } from './y'` re-exports, which barrel files are
+                // built out of, are dependencies just as much as imports are.
+                Self::record_module_specifier(node, source, rel_path, file_info);
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
                     match child.kind() {
@@ -885,17 +955,7 @@ impl JstsParser {
                 }
             }
             "import_statement" => {
-                let mut cursor = node.walk();
-                for child in node.children(&mut cursor) {
-                    if child.kind() == "string" {
-                        let text = node_text(child, source);
-                        let path = text.trim_matches(|c| c == '\'' || c == '"');
-                        if !path.starts_with('.') {
-                            file_info.imports.push(path.to_string());
-                        }
-                        break;
-                    }
-                }
+                Self::record_module_specifier(node, source, rel_path, file_info);
             }
             "type_alias_declaration" => {
                 let name = Self::get_name(node, source).to_string();
@@ -1100,5 +1160,63 @@ impl LanguageParser for JstsParser {
         file_info.annotations = extract_comment_annotations(root, &source, DEFAULT_COMMENT_TYPES);
         result.files.push(file_info);
         result
+    }
+}
+
+#[cfg(test)]
+mod specifier_tests {
+    use super::JstsParser;
+
+    fn resolve(spec: &str, from: &str) -> Option<String> {
+        JstsParser::resolve_relative_specifier(spec, from)
+    }
+
+    #[test]
+    fn sibling_and_nested_specifiers_resolve_against_the_importing_directory() {
+        // The result must match `file_to_module_path`'s shape so the shared
+        // resolver can match it without language-specific handling.
+        assert_eq!(
+            resolve("./components/Tree", "a/b/App.tsx").as_deref(),
+            Some("a/b/components/Tree")
+        );
+        assert_eq!(
+            resolve("./util", "a/b/App.tsx").as_deref(),
+            Some("a/b/util")
+        );
+    }
+
+    #[test]
+    fn parent_specifiers_walk_up() {
+        assert_eq!(
+            resolve("../shared/Bar", "a/b/c/App.tsx").as_deref(),
+            Some("a/b/shared/Bar")
+        );
+        assert_eq!(
+            resolve("../../top", "a/b/c/App.tsx").as_deref(),
+            Some("a/top")
+        );
+    }
+
+    #[test]
+    fn an_extension_on_the_specifier_is_stripped_not_trusted() {
+        // TypeScript writes `./x.js` to mean the file that compiles from `x.ts`.
+        assert_eq!(resolve("./x.js", "a/App.ts").as_deref(), Some("a/x"));
+        assert_eq!(resolve("./x.tsx", "a/App.ts").as_deref(), Some("a/x"));
+    }
+
+    #[test]
+    fn a_directory_entry_point_collapses_to_the_directory() {
+        // `file_to_module_path` drops an `index` leaf, so specifiers naming it
+        // must collapse the same way or they would never match.
+        assert_eq!(
+            resolve("./hooks/index", "a/App.tsx").as_deref(),
+            Some("a/hooks")
+        );
+        assert_eq!(resolve("./hooks", "a/App.tsx").as_deref(), Some("a/hooks"));
+    }
+
+    #[test]
+    fn walking_above_the_repo_root_resolves_to_nothing() {
+        assert_eq!(resolve("../../../x", "a/App.tsx"), None);
     }
 }

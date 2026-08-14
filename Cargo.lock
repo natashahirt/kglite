@@ -1877,7 +1877,7 @@ dependencies = [
 
 [[package]]
 name = "kglite"
-version = "0.10.26"
+version = "0.10.27"
 dependencies = [
  "aho-corasick",
  "bincode",
@@ -1918,6 +1918,7 @@ dependencies = [
  "tree-sitter-html",
  "tree-sitter-java",
  "tree-sitter-javascript",
+ "tree-sitter-julia",
  "tree-sitter-php",
  "tree-sitter-python",
  "tree-sitter-rust",
@@ -1932,7 +1933,7 @@ dependencies = [
 
 [[package]]
 name = "kglite-bolt-server"
-version = "0.10.26"
+version = "0.10.27"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1948,7 +1949,7 @@ dependencies = [
 
 [[package]]
 name = "kglite-c"
-version = "0.10.26"
+version = "0.10.27"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1959,7 +1960,7 @@ dependencies = [
 
 [[package]]
 name = "kglite-mcp-server"
-version = "0.10.26"
+version = "0.10.27"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1981,7 +1982,7 @@ dependencies = [
 
 [[package]]
 name = "kglite-py"
-version = "0.10.26"
+version = "0.10.27"
 dependencies = [
  "bincode",
  "chrono",
@@ -4133,6 +4134,16 @@ name = "tree-sitter-javascript"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-julia"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4144731a178812ee867619b1e98b3b91e54c1652304b26e5ebe3175b701de323"
 dependencies = [
  "cc",
  "tree-sitter-language",
