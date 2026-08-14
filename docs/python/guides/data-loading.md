@@ -16,24 +16,30 @@ The columns you'll point `add_nodes` / `add_connections` at:
 import pandas as pd
 import kglite
 
-users = pd.DataFrame({
-    "user_id": [1001, 1002, 1003],
-    "name":    ["Alice", "Bob",   "Carol"],
-    "country": ["US",    "UK",    "US"],
-})
+users = pd.DataFrame(
+    {
+        "user_id": [1001, 1002, 1003],
+        "name": ["Alice", "Bob", "Carol"],
+        "country": ["US", "UK", "US"],
+    }
+)
 
-products = pd.DataFrame({
-    "sku":   ["P-101", "P-102", "P-103"],
-    "title": ["Laptop", "Phone", "Tablet"],
-    "price": [999.99,  699.99,  349.99],
-})
+products = pd.DataFrame(
+    {
+        "sku": ["P-101", "P-102", "P-103"],
+        "title": ["Laptop", "Phone", "Tablet"],
+        "price": [999.99, 699.99, 349.99],
+    }
+)
 
-orders = pd.DataFrame({
-    "user_id":  [1001, 1001, 1002, 1003],
-    "sku":      ["P-101", "P-103", "P-102", "P-101"],
-    "date":     ["2024-01-15", "2024-02-10", "2024-01-20", "2024-03-04"],
-    "quantity": [1, 2, 1, 1],
-})
+orders = pd.DataFrame(
+    {
+        "user_id": [1001, 1001, 1002, 1003],
+        "sku": ["P-101", "P-103", "P-102", "P-101"],
+        "date": ["2024-01-15", "2024-02-10", "2024-01-20", "2024-03-04"],
+        "quantity": [1, 2, 1, 1],
+    }
+)
 ```
 
 ### 2. Load nodes
@@ -41,8 +47,8 @@ orders = pd.DataFrame({
 ```python
 graph = kglite.KnowledgeGraph()
 
-graph.add_nodes(users,    "User",    "user_id", "name")
-graph.add_nodes(products, "Product", "sku",     "title")
+graph.add_nodes(users, "User", "user_id", "name")
+graph.add_nodes(products, "Product", "sku", "title")
 ```
 
 `unique_id_field` (3rd arg) is what makes a row identifiable;
@@ -56,9 +62,11 @@ the original column name or the canonical `id` / `title`.
 graph.add_connections(
     orders,
     connection_type="ORDERED",
-    source_type="User",      source_id_field="user_id",
-    target_type="Product",   target_id_field="sku",
-    columns=["date", "quantity"],   # extra props go on the edge
+    source_type="User",
+    source_id_field="user_id",
+    target_type="Product",
+    target_id_field="sku",
+    columns=["date", "quantity"],  # extra props go on the edge
 )
 ```
 
@@ -113,7 +121,7 @@ keyword arguments worth knowing:
 Every call returns a report dict:
 
 ```python
-report = graph.add_nodes(products_df, 'Product', 'sku', 'title')
+report = graph.add_nodes(products_df, "Product", "sku", "title")
 print(report)
 # {'operation': 'add_nodes', 'nodes_created': 3, 'nodes_updated': 0,
 #  'nodes_skipped': 0, 'has_errors': False, 'processing_time_ms': 0.4, ...}
@@ -136,8 +144,8 @@ When adding nodes, `unique_id_field` and `node_title_field` are **mapped** to `i
 ```python
 # After adding with unique_id_field='user_id', node_title_field='name':
 graph.cypher("MATCH (u:User) WHERE u.user_id = 1001 RETURN u")  # OK — alias resolves to id
-graph.select('User').where({'user_id': 1001})              # OK — alias works here too
-graph.select('User').where({'id': 1001})                   # Also OK — canonical name
+graph.select("User").where({"user_id": 1001})  # OK — alias works here too
+graph.select("User").where({"id": 1001})  # Also OK — canonical name
 
 # Results always use canonical names:
 # {'id': 1001, 'title': 'Alice', 'type': 'User', ...}  — NOT 'user_id' or 'name'
@@ -192,9 +200,9 @@ external lookups. Same shape — call `add_nodes` again with the
 same `node_type` and `unique_id_field`.
 
 ```python
-graph.add_nodes(users_df,        "User", "user_id", "name")
+graph.add_nodes(users_df, "User", "user_id", "name")
 graph.add_nodes(pagerank_scores, "User", "user_id")  # adds .pagerank
-graph.add_nodes(geocoded,        "User", "user_id")  # adds .lat / .lon
+graph.add_nodes(geocoded, "User", "user_id")  # adds .lat / .lon
 ```
 
 ### What carries over between calls
@@ -266,13 +274,13 @@ better off thinking of them as "facets of the parent" than as
 peer types:
 
 ```python
-graph.add_nodes(fields_df,             "Field",             "id", "name")
-graph.add_nodes(production_profiles,   "ProductionProfile", "id")
-graph.add_nodes(reserves,              "FieldReserves",     "id")
+graph.add_nodes(fields_df, "Field", "id", "name")
+graph.add_nodes(production_profiles, "ProductionProfile", "id")
+graph.add_nodes(reserves, "FieldReserves", "id")
 
 # Tell describe() these are supporting children of Field
 graph.set_parent_type("ProductionProfile", "Field")
-graph.set_parent_type("FieldReserves",     "Field")
+graph.set_parent_type("FieldReserves", "Field")
 ```
 
 This affects only `describe()` output: the supporting types drop
@@ -297,26 +305,27 @@ queries; `set_parent_type` shapes the LLM's mental model.
 ```python
 graph.add_nodes(
     data=estimates_df,
-    node_type='Estimate',
-    unique_id_field='estimate_id',
-    node_title_field='name',
-    column_types={'valid_from': 'datetime', 'valid_to': 'datetime'}
+    node_type="Estimate",
+    unique_id_field="estimate_id",
+    node_title_field="name",
+    column_types={"valid_from": "datetime", "valid_to": "datetime"},
 )
 
-graph.select('Estimate').where({'valid_from': {'>=': '2020-06-01'}})
-graph.select('Estimate').valid_at('2020-06-15')
-graph.select('Estimate').valid_during('2020-01-01', '2020-06-30')
+graph.select("Estimate").where({"valid_from": {">=": "2020-06-01"}})
+graph.select("Estimate").valid_at("2020-06-15")
+graph.select("Estimate").valid_during("2020-01-01", "2020-06-30")
 ```
 
 ## Batch Property Updates
 
 ```python
-result = graph.select('Prospect').where({'status': 'Inactive'}).update({
-    'is_active': False,
-    'deactivation_reason': 'status_inactive'
-})
+result = (
+    graph.select("Prospect")
+    .where({"status": "Inactive"})
+    .update({"is_active": False, "deactivation_reason": "status_inactive"})
+)
 
-updated_graph = result['graph']
+updated_graph = result["graph"]
 print(f"Updated {result['nodes_updated']} nodes")
 ```
 
@@ -325,13 +334,13 @@ print(f"Updated {result['nodes_updated']} nodes")
 Operations that modify the graph return detailed reports:
 
 ```python
-report = graph.add_nodes(data=df, node_type='Product', unique_id_field='product_id')
+report = graph.add_nodes(data=df, node_type="Product", unique_id_field="product_id")
 # report keys: operation, timestamp, nodes_created, nodes_updated, nodes_skipped,
 #              processing_time_ms, has_errors, errors
 
-graph.last_report()       # most recent operation report
-graph.operation_index()   # sequential index of last operation
-graph.report_history()    # all reports
+graph.last_report()  # most recent operation report
+graph.operation_index()  # sequential index of last operation
+graph.report_history()  # all reports
 ```
 
 ## N-Triples and RDF
@@ -366,6 +375,7 @@ wrappers — they handle download, cooldown, and resume on top of
 
 ```python
 from kglite.datasets import wikidata
+
 g = wikidata.open("/data/wd")
 ```
 

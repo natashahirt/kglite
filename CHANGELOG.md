@@ -4351,8 +4351,7 @@ benches.
 
   Pyfunction signature:
   ```python
-  kg.explore(query, max_entities=10, max_depth=2,
-             include_source=True, source_roots=None)
+  kg.explore(query, max_entities=10, max_depth=2, include_source=True, source_roots=None)
   ```
   MCP tool ships with bundled methodology
   (`kglite/mcp_server/skills/explore.md`) gated on
@@ -7986,13 +7985,19 @@ each addition; none are domain-specific.
 
   ```python
   result = graph.shortest_path(
-      "Stop", "A", "Stop", "Z",
+      "Stop",
+      "A",
+      "Stop",
+      "Z",
       weight_property="cost",
   )
   # {'path': [...], 'connections': [...], 'length': 3, 'weight': 4.7}
 
   graph.shortest_path_length(
-      "Stop", "A", "Stop", "Z",
+      "Stop",
+      "A",
+      "Stop",
+      "Z",
       weight_property="cost",
   )  # → 4.7 (float; int when unweighted)
   ```

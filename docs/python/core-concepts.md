@@ -77,22 +77,22 @@ All node-related methods use a consistent key order: **`type`, `title`, `id`**, 
 ```python
 result = graph.cypher("MATCH (n:Person) RETURN n.name, n.age ORDER BY n.age")
 
-len(result)        # row count (O(1), no conversion)
-result[0]          # single row as dict (converts that row only)
-result[-1]         # negative indexing works
+len(result)  # row count (O(1), no conversion)
+result[0]  # single row as dict (converts that row only)
+result[-1]  # negative indexing works
 
-for row in result: # iterate rows as dicts (one at a time)
+for row in result:  # iterate rows as dicts (one at a time)
     print(row)
 
-result.head()      # first 5 rows → new ResultView
-result.head(3)     # first 3 rows → new ResultView
-result.tail(2)     # last 2 rows → new ResultView
+result.head()  # first 5 rows → new ResultView
+result.head(3)  # first 3 rows → new ResultView
+result.tail(2)  # last 2 rows → new ResultView
 
-result.to_list()   # all rows as list[dict] (full conversion)
-result.to_df()     # pandas DataFrame (full conversion)
+result.to_list()  # all rows as list[dict] (full conversion)
+result.to_df()  # pandas DataFrame (full conversion)
 
-result.columns     # column names: ['n.name', 'n.age']
-result.stats       # mutation stats (None for read queries)
+result.columns  # column names: ['n.name', 'n.age']
+result.stats  # mutation stats (None for read queries)
 ```
 
 Because `ResultView` supports iteration and indexing, it works anywhere you'd use a list of dicts — existing code that iterates over `cypher()` results continues to work unchanged.
@@ -102,7 +102,7 @@ Because `ResultView` supports iteration and indexing, it works anywhere you'd us
 Every method that returns node data uses the same dict shape:
 
 ```python
-{'type': 'Person', 'title': 'Alice', 'id': 1, 'age': 28, 'city': 'Oslo'}
+{"type": "Person", "title": "Alice", "id": 1, "age": 28, "city": "Oslo"}
 #  ^^^^             ^^^^^             ^^^       ^^^ other properties
 ```
 
@@ -125,15 +125,15 @@ Every method that returns node data uses the same dict shape:
 
 ```python
 # No traversal (single group) → flat list
-graph.select('Person').titles()
+graph.select("Person").titles()
 # ['Alice', 'Bob', 'Charlie']
 
 # After traversal (multiple groups) → grouped dict
-graph.select('Person').traverse('KNOWS').titles()
+graph.select("Person").traverse("KNOWS").titles()
 # {'Alice': ['Bob'], 'Bob': ['Charlie']}
 
 # Override with flatten_single_parent=False to always get grouped
-graph.select('Person').titles(flatten_single_parent=False)
+graph.select("Person").titles(flatten_single_parent=False)
 # {'Root': ['Alice', 'Bob', 'Charlie']}
 ```
 

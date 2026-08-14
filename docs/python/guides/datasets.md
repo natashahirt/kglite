@@ -42,8 +42,7 @@ g_100 = wikidata.open("/data/wd", entity_limit_millions=100)
 
 # Pure in-memory build — useful for benchmarking without the
 # disk-save overhead. Always rebuilds from the cached dump.
-g_mem = wikidata.open("/data/wd", storage="memory",
-                      entity_limit_millions=10)
+g_mem = wikidata.open("/data/wd", storage="memory", entity_limit_millions=10)
 ```
 
 ### Workdir layout
@@ -138,10 +137,8 @@ extraction.
 
 ```python
 # Same shape, smaller graph, in-memory extraction:
-g_100 = wikidata.open("/data/wd", entity_limit_millions=100,
-                      storage="memory")
-g_100.select("scholarly article").expand(hops=1, type="P50") \
-     .save_subset("/data/wd_100m_papers_authors.kgl")
+g_100 = wikidata.open("/data/wd", entity_limit_millions=100, storage="memory")
+g_100.select("scholarly article").expand(hops=1, type="P50").save_subset("/data/wd_100m_papers_authors.kgl")
 ```
 
 The leading-underscore `_save_subset_filtered_by_edge_type` is the
@@ -228,6 +225,7 @@ To remove the saved complement permanently:
 
 ```python
 import kglite.datasets.sodir as sodir
+
 sodir.remove_complement("/data/sodir")
 ```
 

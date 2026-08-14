@@ -63,7 +63,7 @@ import re
 import sys
 
 query = sys.stdin.read()
-query = re.sub(r"(['\"])Q(\d+)\1", r"\2", query)   # 'Q42' → 42
+query = re.sub(r"(['\"])Q(\d+)\1", r"\2", query)  # 'Q42' → 42
 # ...any further transformations...
 sys.stdout.write(query)
 ```

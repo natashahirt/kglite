@@ -51,21 +51,15 @@ graph.cypher("""
 ## Export Subgraph
 
 ```python
-subgraph = (
-    graph.select('Person')
-    .where({'name': 'Alice'})
-    .expand(hops=2)
-    .to_subgraph()
-)
-subgraph.export('alice_network.graphml', format='graphml')
+subgraph = graph.select("Person").where({"name": "Alice"}).expand(hops=2).to_subgraph()
+subgraph.export("alice_network.graphml", format="graphml")
 ```
 
 ## Parameterized Queries
 
 ```python
 graph.cypher(
-    "MATCH (p:Person) WHERE p.city = $city AND p.age > $min_age RETURN p.name",
-    params={'city': 'Oslo', 'min_age': 25}
+    "MATCH (p:Person) WHERE p.city = $city AND p.age > $min_age RETURN p.name", params={"city": "Oslo", "min_age": 25}
 )
 ```
 
@@ -123,12 +117,15 @@ graph in-place rather than yielding a re-queryable view.
 ```python
 from kglite import Agg
 
-graph.select('Field').traverse('HAS_WELL') \
-    .add_properties({'Well': {
-        'n_wells': Agg.count(),
-        'total_production': Agg.sum('production'),
-        'deepest_well': Agg.max('depth'),
-    }})
+graph.select("Field").traverse("HAS_WELL").add_properties(
+    {
+        "Well": {
+            "n_wells": Agg.count(),
+            "total_production": Agg.sum("production"),
+            "deepest_well": Agg.max("depth"),
+        }
+    }
+)
 ```
 
 Same effect on the graph. The metric definitions are typed
@@ -143,13 +140,16 @@ When the parent has geometry, mix `Spatial.*` helpers in:
 ```python
 from kglite import Agg, Spatial
 
-graph.select('Structure').compare('Well', 'contains') \
-    .add_properties({'Structure': {
-        'wells_inside': Agg.count(),
-        'avg_well_depth': Agg.mean('depth'),
-        'struct_area_m2': Spatial.area(),
-        'mean_dist_to_centroid': Spatial.distance(),
-    }})
+graph.select("Structure").compare("Well", "contains").add_properties(
+    {
+        "Structure": {
+            "wells_inside": Agg.count(),
+            "avg_well_depth": Agg.mean("depth"),
+            "struct_area_m2": Spatial.area(),
+            "mean_dist_to_centroid": Spatial.distance(),
+        }
+    }
+)
 ```
 
 The `compare('Well', 'contains')` step uses the spatial index, so

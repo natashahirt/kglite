@@ -9,6 +9,7 @@ Register an embedding model once, then embed and search using text column names.
 ```python
 from sentence_transformers import SentenceTransformer
 
+
 class Embedder:
     def __init__(self, model_name="all-MiniLM-L6-v2"):
         self._model_name = model_name
@@ -19,6 +20,7 @@ class Embedder:
     def load(self):
         """Called automatically before embedding. Loads model on demand."""
         import threading
+
         if self._timer:
             self._timer.cancel()
             self._timer = None
@@ -29,14 +31,17 @@ class Embedder:
     def unload(self, cooldown=60):
         """Called automatically after embedding. Releases after cooldown."""
         import threading
+
         def _release():
             self._model = None
             self._timer = None
+
         self._timer = threading.Timer(cooldown, _release)
         self._timer.start()
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return self._model.encode(texts).tolist()
+
 
 # Register once on the graph
 graph.set_embedder(Embedder())
@@ -68,10 +73,7 @@ graph.embed_texts("Article", "summary")
 graph.embed_texts("Article", "summary", replace=True)
 
 # Combine with filters
-results = (graph
-    .select("Article")
-    .where({"category": "politics"})
-    .search_text("summary", "foreign policy", top_k=10))
+results = graph.select("Article").where({"category": "politics"}).search_text("summary", "foreign policy", top_k=10)
 ```
 
 ## Low-Level Vector API
@@ -83,18 +85,24 @@ If you manage vectors yourself, use the low-level API:
 ```python
 # Explicit: pass a dict of {node_id: vector}.
 # set_embeddings REPLACES the whole store for ('Article', 'summary_emb').
-graph.set_embeddings('Article', 'summary', {
-    1: [0.1, 0.2, 0.3, ...],
-    2: [0.4, 0.5, 0.6, ...],
-})
+graph.set_embeddings(
+    "Article",
+    "summary",
+    {
+        1: [0.1, 0.2, 0.3, ...],
+        2: [0.4, 0.5, 0.6, ...],
+    },
+)
 
 # Or auto-detect during add_nodes with column_types
-df = pd.DataFrame({
-    'id': [1, 2, 3],
-    'title': ['A', 'B', 'C'],
-    'text_emb': [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
-})
-graph.add_nodes(df, 'Doc', 'id', 'title', column_types={'text_emb': 'embedding'})
+df = pd.DataFrame(
+    {
+        "id": [1, 2, 3],
+        "title": ["A", "B", "C"],
+        "text_emb": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
+    }
+)
+graph.add_nodes(df, "Doc", "id", "title", column_types={"text_emb": "embedding"})
 ```
 
 ### Incremental ingest — `add_embeddings`
@@ -109,13 +117,21 @@ Use `add_embeddings` for that. It **upserts** into the existing store
 read-merge-write cycle in your own code:
 
 ```python
-graph.add_embeddings('Chunk', 'text', {  # doc A's chunks
-    'a:1': [0.1, 0.2, ...],
-    'a:2': [0.3, 0.4, ...],
-})
-graph.add_embeddings('Chunk', 'text', {  # doc B's chunks — A's survive
-    'b:1': [0.5, 0.6, ...],
-})
+graph.add_embeddings(
+    "Chunk",
+    "text",
+    {  # doc A's chunks
+        "a:1": [0.1, 0.2, ...],
+        "a:2": [0.3, 0.4, ...],
+    },
+)
+graph.add_embeddings(
+    "Chunk",
+    "text",
+    {  # doc B's chunks — A's survive
+        "b:1": [0.5, 0.6, ...],
+    },
+)
 # -> {'embeddings_stored': int, 'dimension': int, 'skipped': int, 'store_created': bool}
 ```
 
@@ -132,21 +148,17 @@ to recover properties.
 
 ```python
 # Basic search — returns list of dicts sorted by similarity
-results = graph.select('Article').vector_search('summary', query_vec, top_k=10)
+results = graph.select("Article").vector_search("summary", query_vec, top_k=10)
 # [{'id': 5, 'title': '...', 'type': 'Article', 'score': 0.95, ...}, ...]
 
 # Filtered search — only search within a subset
-results = (graph
-    .select('Article')
-    .where({'category': 'politics'})
-    .vector_search('summary', query_vec, top_k=10))
+results = graph.select("Article").where({"category": "politics"}).vector_search("summary", query_vec, top_k=10)
 
 # DataFrame output
-df = graph.select('Article').vector_search('summary', query_vec, top_k=10, to_df=True)
+df = graph.select("Article").vector_search("summary", query_vec, top_k=10, to_df=True)
 
 # Distance metrics: 'cosine' (default), 'dot_product', 'euclidean', 'poincare'
-results = graph.select('Article').vector_search(
-    'summary', query_vec, top_k=10, metric='dot_product')
+results = graph.select("Article").vector_search("summary", query_vec, top_k=10, metric="dot_product")
 ```
 
 ### Choosing a Distance Metric
@@ -166,14 +178,13 @@ When embeddings are trained for a specific geometry, store the intended metric a
 
 ```python
 # Store Poincaré embeddings with their intended metric
-graph.set_embeddings('Concept', 'title', poincare_vectors, metric='poincare')
+graph.set_embeddings("Concept", "title", poincare_vectors, metric="poincare")
 
 # Queries now default to poincaré distance — no need to pass metric= each time
-results = graph.select('Concept').vector_search('title', query_vec, top_k=10)
+results = graph.select("Concept").vector_search("title", query_vec, top_k=10)
 
 # You can still override explicitly
-results = graph.select('Concept').vector_search(
-    'title', query_vec, top_k=10, metric='cosine')
+results = graph.select("Concept").vector_search("title", query_vec, top_k=10, metric="cosine")
 
 # list_embeddings() shows the stored metric
 graph.list_embeddings()
@@ -196,11 +207,14 @@ graph.cypher("""
 """)
 
 # With parameters
-graph.cypher("""
+graph.cypher(
+    """
     MATCH (n:Article)
     WHERE text_score(n, 'summary', $query) > 0.8
     RETURN n.title
-""", params={'query': 'artificial intelligence'})
+""",
+    params={"query": "artificial intelligence"},
+)
 
 # With explicit metric
 graph.cypher("""
@@ -244,17 +258,17 @@ graph.cypher("""
 graph.list_embeddings()
 # [{'node_type': 'Article', 'text_column': 'summary', 'dimension': 384, 'count': 1000, 'metric': None}]
 
-graph.remove_embeddings('Article', 'summary')
+graph.remove_embeddings("Article", "summary")
 
 # Retrieve all embeddings for a type (no selection needed)
-embs = graph.embeddings('Article', 'summary')
+embs = graph.embeddings("Article", "summary")
 # {1: [0.1, 0.2, ...], 2: [0.4, 0.5, ...], ...}
 
 # Retrieve embeddings for current selection only
-embs = graph.select('Article').where({'category': 'politics'}).embeddings('summary')
+embs = graph.select("Article").where({"category": "politics"}).embeddings("summary")
 
 # Get a single node's embedding (O(1) lookup, returns None if not found)
-vec = graph.embedding('Article', 'summary', node_id)
+vec = graph.embedding("Article", "summary", node_id)
 ```
 
 Embeddings persist across `save()`/`load()` cycles automatically.

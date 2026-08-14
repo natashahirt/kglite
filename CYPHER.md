@@ -538,9 +538,9 @@ RETURN degrees(pi())             // → 180.0
 > **Auto-coercion:** String functions accept non-string values (DateTime, numbers, booleans) and auto-convert them to strings. For example, `substring(date('2020-06-15'), 0, 4)` returns `"2020"`.
 
 ```python
-graph.cypher("RETURN split('a,b,c', ',') AS parts")         # ["a", "b", "c"]
+graph.cypher("RETURN split('a,b,c', ',') AS parts")  # ["a", "b", "c"]
 graph.cypher("RETURN replace('hello world', 'world', 'cypher') AS s")  # "hello cypher"
-graph.cypher("RETURN substring('hello', 1, 3) AS s")        # "ell"
+graph.cypher("RETURN substring('hello', 1, 3) AS s")  # "ell"
 graph.cypher("RETURN left('hello', 2) AS l, right('hello', 2) AS r")  # "he", "lo"
 ```
 
@@ -667,7 +667,7 @@ graph.cypher("""
 """)
 
 # none / single
-graph.cypher("RETURN none(x IN [1, 2, 3] WHERE x < 0) AS all_positive")   # true
+graph.cypher("RETURN none(x IN [1, 2, 3] WHERE x < 0) AS all_positive")  # true
 graph.cypher("RETURN single(x IN [1, 2, 3] WHERE x = 2) AS has_one_two")  # true
 ```
 
@@ -723,7 +723,7 @@ graph.cypher("""
 # maps). To reach a map field after a list index, chain brackets — or bind the
 # parsed value with WITH and use dot access (arr[0].name).
 graph.cypher("RETURN parse_json('[{\"name\":\"x\"}]')[0]['name'] AS first")  # "x"
-graph.cypher("RETURN parse_json('{\"a\":1}')['a'] AS a")                      # 1
+graph.cypher("RETURN parse_json('{\"a\":1}')['a'] AS a")  # 1
 ```
 
 Combine with `any` / `all` / list comprehensions to filter or project the
@@ -742,11 +742,11 @@ graph.cypher("""
 """)
 
 # Open-ended slices
-graph.cypher("RETURN [1,2,3,4,5][2..] AS from_idx_2")    # [3, 4, 5]
-graph.cypher("RETURN [1,2,3,4,5][..3] AS first_three")    # [1, 2, 3]
+graph.cypher("RETURN [1,2,3,4,5][2..] AS from_idx_2")  # [3, 4, 5]
+graph.cypher("RETURN [1,2,3,4,5][..3] AS first_three")  # [1, 2, 3]
 
 # Negative indices (from end)
-graph.cypher("RETURN [1,2,3,4,5][-2..] AS last_two")      # [4, 5]
+graph.cypher("RETURN [1,2,3,4,5][-2..] AS last_two")  # [4, 5]
 ```
 
 ## Map Projections
@@ -793,21 +793,14 @@ graph.cypher("WITH {x: 1, y: 2} AS point RETURN point")
 ## Parameters
 
 ```python
-graph.cypher(
-    "MATCH (n:Person) WHERE n.age > $min_age RETURN n.name, n.age",
-    params={'min_age': 25}
-)
+graph.cypher("MATCH (n:Person) WHERE n.age > $min_age RETURN n.name, n.age", params={"min_age": 25})
 
 # Parameters in inline pattern properties
-graph.cypher(
-    "MATCH (n:Person {name: $name}) RETURN n.age",
-    params={'name': 'Alice'}
-)
+graph.cypher("MATCH (n:Person {name: $name}) RETURN n.age", params={"name": "Alice"})
 
 # Parameters with DataFrame output
 df = graph.cypher(
-    "MATCH (n:Person) WHERE n.age > $min_age RETURN n.name, n.age ORDER BY n.age",
-    params={'min_age': 20}, to_df=True
+    "MATCH (n:Person) WHERE n.age > $min_age RETURN n.name, n.age ORDER BY n.age", params={"min_age": 20}, to_df=True
 )
 ```
 
@@ -951,14 +944,17 @@ The fluent `shortest_path()` accepts an optional `weight_property` that flips th
 ```python
 # Cheapest path by edge.cost (a property on each edge)
 result = graph.shortest_path(
-    "Stop", "A", "Stop", "Z",
+    "Stop",
+    "A",
+    "Stop",
+    "Z",
     weight_property="cost",
 )
 # {'path': [...], 'connections': [...], 'length': 3, 'weight': 4.7}
 
 # Length-only variant returns float when weighted, int otherwise
 graph.shortest_path_length("Stop", "A", "Stop", "Z", weight_property="cost")  # → 4.7
-graph.shortest_path_length("Stop", "A", "Stop", "Z")                          # → 3
+graph.shortest_path_length("Stop", "A", "Stop", "Z")  # → 3
 ```
 
 Same Louvain plumbing — `weight_property=None` falls back to BFS.
@@ -1171,7 +1167,7 @@ instead).
 ```python
 # CREATE — returns ResultView with .stats
 result = graph.cypher("CREATE (n:Person {name: 'Alice', age: 30, city: 'Oslo'})")
-print(result.stats['nodes_created'])  # 1
+print(result.stats["nodes_created"])  # 1
 
 # CREATE relationship between existing nodes
 graph.cypher("""
@@ -1181,7 +1177,7 @@ graph.cypher("""
 
 # SET — update properties
 result = graph.cypher("MATCH (n:Person {name: 'Bob'}) SET n.age = 26, n.city = 'Stavanger'")
-print(result.stats['properties_set'])  # 2
+print(result.stats["properties_set"])  # 2
 
 # DELETE — plain DELETE errors if node has relationships; DETACH removes all
 graph.cypher("MATCH (n:Person {name: 'Alice'}) DETACH DELETE n")
@@ -1215,18 +1211,21 @@ with graph.begin() as tx:
 # Manual control:
 tx = graph.begin()
 tx.cypher("CREATE (:Person {name: 'Charlie'})")
-tx.commit()   # or tx.rollback()
+tx.commit()  # or tx.rollback()
 ```
 
 ## DataFrame Output
 
 ```python
-df = graph.cypher("""
+df = graph.cypher(
+    """
     MATCH (p:Person)-[:KNOWS]->(f:Person)
     WITH p, count(f) AS friends
     RETURN p.name, p.city, friends
     ORDER BY friends DESC
-""", to_df=True)
+""",
+    to_df=True,
+)
 ```
 
 ## EXPLAIN
@@ -1300,7 +1299,7 @@ Keys:
 Create an equality index on a `(node_type, property)` pair to accelerate `MATCH (n:T {prop: value})` and `WHERE n.prop = value` to O(log N):
 
 ```python
-graph.create_index('Country', 'label')
+graph.create_index("Country", "label")
 # {'node_type': 'Country', 'property': 'label',
 #  'unique_values': 5, 'persistent': true, 'created': true}
 ```

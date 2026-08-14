@@ -16,9 +16,9 @@ graph = kglite.KnowledgeGraph()
 tx = graph.begin()
 tx.cypher("CREATE (:Person {name: 'Alice'})")
 tx.cypher("CREATE (:Person {name: 'Bob'})")
-tx.commit()          # apply atomically
+tx.commit()  # apply atomically
 # OR
-tx.rollback()        # discard everything
+tx.rollback()  # discard everything
 
 # Read-only transaction — Arc snapshot, O(1) cost, zero memory overhead.
 tx = graph.begin_read()
@@ -72,7 +72,7 @@ Calling `graph.cypher(query)` **without** an enclosing
 
 ```python
 graph.cypher("CREATE (:Person {name: 'Alice'})")  # committed immediately
-graph.cypher("CREATE (:Person {name: 'Bob'})")    # committed immediately
+graph.cypher("CREATE (:Person {name: 'Bob'})")  # committed immediately
 ```
 
 This has a contract caveat: **multi-statement queries that fail
@@ -80,9 +80,7 @@ partway through leave earlier statements visible.** Example:
 
 ```python
 graph.cypher(
-    "CREATE (:Person {name: 'A'}) "
-    "CREATE (:Person {name: 'B'}) "
-    "MATCH (x:NoSuchType) RETURN x"   # later clause fails
+    "CREATE (:Person {name: 'A'}) CREATE (:Person {name: 'B'}) MATCH (x:NoSuchType) RETURN x"  # later clause fails
 )
 # The 2 CREATEs are already in the graph; only the MATCH errored.
 ```
