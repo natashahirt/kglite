@@ -22,8 +22,8 @@ directions, and breaks edges down by language pair so cross-language resolution
 """
 
 import ast
-import sys
 from pathlib import Path
+import sys
 
 REPO = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 
