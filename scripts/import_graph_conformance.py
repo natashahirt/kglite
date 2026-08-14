@@ -100,14 +100,8 @@ def main() -> None:
     def rows(q):
         return [dict(r) for r in g.cypher(q, params={})]
 
-    py_files = {
-        r["p"]
-        for r in rows("MATCH (f:File) WHERE f.language = 'python' RETURN f.path AS p")
-    }
-    kgl = {
-        (r["a"], r["b"])
-        for r in rows("MATCH (a:File)-[:IMPORTS]->(b:File) RETURN a.path AS a, b.path AS b")
-    }
+    py_files = {r["p"] for r in rows("MATCH (f:File) WHERE f.language = 'python' RETURN f.path AS p")}
+    kgl = {(r["a"], r["b"]) for r in rows("MATCH (a:File)-[:IMPORTS]->(b:File) RETURN a.path AS a, b.path AS b")}
     kgl_py = {(a, b) for a, b in kgl if a in py_files and b in py_files}
     orc = oracle(py_files)
 
