@@ -30,10 +30,13 @@ Semantic search lets agents find nodes by meaning, not just exact property match
 # 1. Wrap any embedding model (local or remote)
 class Embedder:
     dimension = 384
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         from sentence_transformers import SentenceTransformer
+
         model = SentenceTransformer("all-MiniLM-L6-v2")
         return model.encode(texts).tolist()
+
 
 # 2. Register it on the graph
 graph.set_embedder(Embedder())

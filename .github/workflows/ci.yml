@@ -24,8 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt, clippy
 
@@ -42,6 +42,42 @@ jobs:
           shared-key: rust-checks
           workspaces: ". -> target"
 
+      # rust-toolchain.toml is the source of truth for local dev; the workflows
+      # name the version again in their `dtolnay/rust-toolchain@<version>` refs
+      # (that ref is a git ref, so it cannot be read from the toml). This gate
+      # stops the two from silently diverging -- otherwise a bump to one alone
+      # would leave contributors linting against a different rustc than CI, which
+      # is exactly the class of drift the pin exists to prevent.
+      - name: Toolchain pin drift gate (rust-toolchain.toml vs workflows)
+        run: |
+          pinned=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$pinned" ]; then
+            echo "::error::Could not read 'channel' from rust-toolchain.toml"
+            exit 1
+          fi
+          echo "rust-toolchain.toml pins: $pinned"
+          # sed, not `grep -P`: the lookbehind is GNU-only and silently
+          # unavailable on a BSD grep, which would make this gate unrunnable
+          # locally. The `uses:` anchor is required, not cosmetic -- unanchored,
+          # the scan also matches the prose and the error string below and
+          # reports phantom mismatches. Fail closed on an empty match set: if the
+          # action is renamed, "found nothing" must not read as "all agree".
+          refs=$(sed -n 's|^[[:space:]]*uses:[[:space:]]*dtolnay/rust-toolchain@\([^[:space:]]*\).*|\1|p' \
+                 .github/workflows/*.yml | sort -u)
+          if [ -z "$refs" ]; then
+            echo "::error::Found no dtolnay/rust-toolchain refs to check -- has the action been renamed? Update this gate."
+            exit 1
+          fi
+          bad=0
+          for ref in $refs; do
+            if [ "$ref" != "$pinned" ]; then
+              echo "::error::workflow uses dtolnay/rust-toolchain@$ref but rust-toolchain.toml pins $pinned"
+              bad=1
+            fi
+          done
+          [ "$bad" -eq 0 ] || exit 1
+          echo "All workflow toolchain refs match the pin."
+
       - name: Check formatting
         run: cargo fmt -- --check
 
@@ -57,8 +93,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: clippy
 
@@ -115,7 +151,14 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install ruff
-        run: pip install ruff
+        # Pinned deliberately. Unpinned, this job went red in 2026-08 with no
+        # code change: a newer ruff began formatting python code blocks INSIDE
+        # markdown, so 28 untouched docs files failed the gate. A formatter that
+        # gains rules is a breaking change for a `--check` gate, so the bump
+        # belongs on its own PR. This is the only declared ruff version in the
+        # repo -- match it locally (`pip install ruff==0.16.3`) or a local
+        # `ruff format` will disagree with this gate.
+        run: pip install ruff==0.16.3
 
       - name: Check formatting
         run: ruff format --check .
@@ -133,8 +176,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@1.97.1
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
@@ -219,7 +262,10 @@ jobs:
       - name: Run stubtest
         if: matrix.python-version == '3.12'
         run: |
-          pip install mypy pandas-stubs
+          # Pinned for the same reason as ruff above: stubtest's output is a
+          # function of the mypy AND pandas-stubs versions, so an unpinned bump
+          # can fail this gate without the stubs or the library changing.
+          pip install mypy==2.3.0 pandas-stubs==3.0.5.260730
           python -m mypy.stubtest kglite --ignore-missing-stub --ignore-unused-allowlist --mypy-config-file mypy_stubtest.ini --allowlist stubtest_allowlist.txt
 
       - name: Upload coverage
@@ -235,8 +281,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@1.97.1
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6

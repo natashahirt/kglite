@@ -31,12 +31,14 @@ import kglite
 graph = kglite.KnowledgeGraph()
 
 # Nodes — one row per node, columns become properties.
-people_df = pd.DataFrame({
-    "user_id": [1001, 1002, 1003],
-    "name":    ["Alice", "Bob", "Charlie"],
-    "age":     [28, 35, 42],
-    "city":    ["Oslo", "Bergen", "Oslo"],
-})
+people_df = pd.DataFrame(
+    {
+        "user_id": [1001, 1002, 1003],
+        "name": ["Alice", "Bob", "Charlie"],
+        "age": [28, 35, 42],
+        "city": ["Oslo", "Bergen", "Oslo"],
+    }
+)
 graph.add_nodes(
     data=people_df,
     node_type="Person",
@@ -124,8 +126,8 @@ handles download, caching, cooldown, and graph build:
 from kglite.datasets import wikidata, sodir
 
 # Wikidata: parallel-decoded multistream bz2 → disk-cached graph
-g = wikidata.open("/data/wd")                              # full graph
-g = wikidata.open("/data/wd", entity_limit_millions=100)   # 100M slice
+g = wikidata.open("/data/wd")  # full graph
+g = wikidata.open("/data/wd", entity_limit_millions=100)  # 100M slice
 
 # Sodir: petroleum-domain graph, in-memory by default
 g = sodir.open("/data/sodir")

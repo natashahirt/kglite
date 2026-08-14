@@ -35,13 +35,15 @@ Suggested test invocation pattern (matches the spec we sent):
 
 ```python
 @pytest.fixture
-def spatial_graph(): return BINARY_ROOT / "tests/fixtures/spatial_graph.kgl"
+def spatial_graph():
+    return BINARY_ROOT / "tests/fixtures/spatial_graph.kgl"
+
 
 def test_spatial_contains_point(mcp_server, spatial_graph):
     proc = mcp_server("--graph", str(spatial_graph))
-    body = call_tool(proc, "cypher_query", {
-        "query": "MATCH (a:Area) WHERE contains(a, point(61.0, 5.0)) RETURN a.title"
-    })
+    body = call_tool(
+        proc, "cypher_query", {"query": "MATCH (a:Area) WHERE contains(a, point(61.0, 5.0)) RETURN a.title"}
+    )
     proc.kill()
     assert "NORTH_BLOCK" in body
 ```

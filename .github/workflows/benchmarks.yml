@@ -18,8 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@1.97.1
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6

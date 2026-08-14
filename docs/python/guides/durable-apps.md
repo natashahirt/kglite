@@ -47,9 +47,9 @@ case where an app does a batch of work and exits cleanly.
 ```python
 g = kglite.open("kb.kgl")
 g.cypher("MERGE (:Topic {id: 'graphs', label: 'Graph theory'})")
-g.save()          # explicit checkpoint, back to kb.kgl
+g.save()  # explicit checkpoint, back to kb.kgl
 # ... more work ...
-g.close()         # final checkpoint
+g.close()  # final checkpoint
 ```
 
 What this is **not**: crash-safe. A snapshot is written only when *you* call
@@ -64,7 +64,7 @@ When losing the in-flight batch is *not* acceptable, use durable mode.
 
 ```python
 g = kglite.open("app.kgl", durable=True)
-g.cypher("CREATE (:Order {id: 1001, total: 49.90})")   # fsync'd before this returns
+g.cypher("CREATE (:Order {id: 1001, total: 49.90})")  # fsync'd before this returns
 ```
 
 With `durable=True`, every committed Cypher mutation is appended to a
@@ -92,14 +92,14 @@ import os
 
 # Process A — commits, then dies hard before any save().
 g = kglite.open("app.kgl", durable=True)
-g.cypher("CREATE (:Person {id: 1, name: 'Alice'})")   # committed + fsync'd
-g.cypher("CREATE (:Person {id: 2, name: 'Bob'})")     # committed + fsync'd
-os._exit(1)   # hard crash — no save(), no clean close
+g.cypher("CREATE (:Person {id: 1, name: 'Alice'})")  # committed + fsync'd
+g.cypher("CREATE (:Person {id: 2, name: 'Bob'})")  # committed + fsync'd
+os._exit(1)  # hard crash — no save(), no clean close
 
 # Process B — reopen recovers both, from the WAL.
 g = kglite.open("app.kgl", durable=True)
 assert g.cypher("MATCH (p:Person) RETURN count(p) AS n").scalar() == 2
-g.save()   # checkpoint: fold the WAL into a fresh .kgl, truncate the log
+g.save()  # checkpoint: fold the WAL into a fresh .kgl, truncate the log
 ```
 
 Both rows survive the crash even though `save()` was never called in process A —

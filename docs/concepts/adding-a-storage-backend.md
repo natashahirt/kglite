@@ -171,8 +171,7 @@ for a curated query set. A new backend joins the parametrization:
 
 ```python
 @pytest.fixture(params=["memory", "mapped", "disk", "my_new_backend"])
-def kg(request):
-    ...
+def kg(request): ...
 ```
 
 For Rust-only backends like `RecordingGraph` (no Python constructor),

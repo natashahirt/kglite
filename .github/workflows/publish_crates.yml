@@ -161,8 +161,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@1.97.1
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
         with:

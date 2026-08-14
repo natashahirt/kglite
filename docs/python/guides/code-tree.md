@@ -38,8 +38,8 @@ graph.save("codebase.kgl")
 # Find entities by name (searches all code entity types)
 graph.find("execute")
 graph.find("KnowledgeGraph", node_type="Struct")
-graph.find("exec", match_type="contains")       # case-insensitive substring
-graph.find("Knowl", match_type="starts_with")    # case-insensitive prefix
+graph.find("exec", match_type="contains")  # case-insensitive substring
+graph.find("Knowl", match_type="starts_with")  # case-insensitive prefix
 
 # Get source location — single or batch
 graph.source("execute_single_clause")
@@ -264,11 +264,11 @@ hours — the embedder's warm cache makes re-runs fast.
 ## Options
 
 ```python
-graph = build(".")                           # auto-detect manifest (pyproject.toml, Cargo.toml)
-graph = build("pyproject.toml")              # explicit manifest file
-graph = build("/path/to/src")                # directory scan (fallback when no manifest)
-graph = build(".", include_tests=True)       # include test directories
-graph = build(".", include_docs=True)        # also ingest markdown as :Doc nodes
+graph = build(".")  # auto-detect manifest (pyproject.toml, Cargo.toml)
+graph = build("pyproject.toml")  # explicit manifest file
+graph = build("/path/to/src")  # directory scan (fallback when no manifest)
+graph = build(".", include_tests=True)  # include test directories
+graph = build(".", include_docs=True)  # also ingest markdown as :Doc nodes
 graph = build(".", save_to="code.kgl", verbose=True)
 ```
 

@@ -62,10 +62,12 @@ Your driver code stays almost identical — just re-point the URI:
 ```python
 # Before — against Neo4j
 from neo4j import GraphDatabase
+
 driver = GraphDatabase.driver("neo4j://prod-db:7687", auth=("neo4j", "secret"))
 
 # After — against kglite-bolt-server
 from neo4j import GraphDatabase
+
 driver = GraphDatabase.driver("bolt://127.0.0.1:7687", auth=None)
 
 with driver.session() as session:
@@ -116,18 +118,23 @@ The same query, both ways:
 ```python
 # Bolt path — neo4j driver
 with driver.session() as session:
-    rows = list(session.run(
-        "MATCH (p:Person) WHERE p.age > $min RETURN p.name AS name",
-        min=30,
-    ))
+    rows = list(
+        session.run(
+            "MATCH (p:Person) WHERE p.age > $min RETURN p.name AS name",
+            min=30,
+        )
+    )
 
 # Native path — kglite in-process
 import kglite
+
 graph = kglite.load("my-graph.kgl")
-rows = list(graph.cypher(
-    "MATCH (p:Person) WHERE p.age > $min RETURN p.name AS name",
-    params={"min": 30},
-))
+rows = list(
+    graph.cypher(
+        "MATCH (p:Person) WHERE p.age > $min RETURN p.name AS name",
+        params={"min": 30},
+    )
+)
 ```
 
 Note the parameter syntax difference: the driver takes `**kwargs`
@@ -149,22 +156,25 @@ graph = kglite.KnowledgeGraph()
 
 # Nodes
 with src.session() as s:
-    people = pd.DataFrame([
-        dict(r["p"]) for r in s.run("MATCH (p:Person) RETURN p")
-    ])
-graph.add_nodes(people, node_type="Person", unique_id_field="id",
-                node_title_field="name")
+    people = pd.DataFrame([dict(r["p"]) for r in s.run("MATCH (p:Person) RETURN p")])
+graph.add_nodes(people, node_type="Person", unique_id_field="id", node_title_field="name")
 
 # Relationships — return the endpoint ids, not the whole nodes
 with src.session() as s:
-    knows = pd.DataFrame([
-        {"src": r["a"], "tgt": r["b"]}
-        for r in s.run("MATCH (a:Person)-[:KNOWS]->(b:Person) "
-                       "RETURN a.id AS a, b.id AS b")
-    ])
-graph.add_connections(knows, connection_type="KNOWS",
-                      source_type="Person", source_id_field="src",
-                      target_type="Person", target_id_field="tgt")
+    knows = pd.DataFrame(
+        [
+            {"src": r["a"], "tgt": r["b"]}
+            for r in s.run("MATCH (a:Person)-[:KNOWS]->(b:Person) RETURN a.id AS a, b.id AS b")
+        ]
+    )
+graph.add_connections(
+    knows,
+    connection_type="KNOWS",
+    source_type="Person",
+    source_id_field="src",
+    target_type="Person",
+    target_id_field="tgt",
+)
 
 graph.save("my-graph.kgl")
 ```
