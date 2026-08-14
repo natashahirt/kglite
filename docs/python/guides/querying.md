@@ -5,29 +5,31 @@
 ## Filtering
 
 ```python
-graph.select('Product').where({'price': 999.99})
-graph.select('Product').where({'price': {'<': 500.0}, 'stock': {'>': 50}})
-graph.select('Product').where({'id': {'in': [101, 103]}})
-graph.select('Product').where({'category': {'is_null': True}})
+graph.select("Product").where({"price": 999.99})
+graph.select("Product").where({"price": {"<": 500.0}, "stock": {">": 50}})
+graph.select("Product").where({"id": {"in": [101, 103]}})
+graph.select("Product").where({"category": {"is_null": True}})
 
 # Regex matching
-graph.select('Person').where({'name': {'regex': '^A.*'}})   # or {'=~': '^A.*'}
-graph.select('Person').where({'name': {'regex': '(?i)^alice'}})  # case-insensitive
+graph.select("Person").where({"name": {"regex": "^A.*"}})  # or {'=~': '^A.*'}
+graph.select("Person").where({"name": {"regex": "(?i)^alice"}})  # case-insensitive
 
 # Negated conditions
-graph.select('Person').where({'city': {'not_in': ['Oslo', 'Bergen']}})
-graph.select('Person').where({'name': {'not_contains': 'test'}})
-graph.select('Person').where({'name': {'not_regex': '^[A-C].*'}})
+graph.select("Person").where({"city": {"not_in": ["Oslo", "Bergen"]}})
+graph.select("Person").where({"name": {"not_contains": "test"}})
+graph.select("Person").where({"name": {"not_regex": "^[A-C].*"}})
 
 # OR logic — where_any keeps nodes matching ANY condition set
-graph.select('Person').where_any([
-    {'city': 'Oslo'},
-    {'city': 'Bergen'},
-])
+graph.select("Person").where_any(
+    [
+        {"city": "Oslo"},
+        {"city": "Bergen"},
+    ]
+)
 
 # Connection existence — filter without changing the selection target
-graph.select('Person').where_connected('KNOWS')                        # any direction
-graph.select('Person').where_connected('KNOWS', direction='outgoing')  # outgoing only
+graph.select("Person").where_connected("KNOWS")  # any direction
+graph.select("Person").where_connected("KNOWS", direction="outgoing")  # outgoing only
 
 # Orphan nodes (no connections)
 graph.where_orphans(include_orphans=True)
@@ -36,27 +38,22 @@ graph.where_orphans(include_orphans=True)
 ## Sorting and Pagination
 
 ```python
-graph.select('Product').sort('price')
-graph.select('Product').sort('price', ascending=False)
-graph.select('Product').sort([('stock', False), ('price', True)])
+graph.select("Product").sort("price")
+graph.select("Product").sort("price", ascending=False)
+graph.select("Product").sort([("stock", False), ("price", True)])
 
 # Pagination with offset + limit
-graph.select('Person').sort('name').offset(20).limit(10)  # page 3 of 10
+graph.select("Person").sort("name").offset(20).limit(10)  # page 3 of 10
 ```
 
 ## Traversing the Graph
 
 ```python
-alice = graph.select('User').where({'title': 'Alice'})
-alice_products = alice.traverse('PURCHASED', direction='outgoing')
+alice = graph.select("User").where({"title": "Alice"})
+alice_products = alice.traverse("PURCHASED", direction="outgoing")
 
 # Filter and sort traversal targets
-expensive = alice.traverse(
-    'PURCHASED',
-    where={'price': {'>=': 500.0}},
-    sort_target='price',
-    limit=10
-)
+expensive = alice.traverse("PURCHASED", where={"price": {">=": 500.0}}, sort_target="price", limit=10)
 
 # Get connection information
 alice.connections(include_node_properties=True)
@@ -69,14 +66,13 @@ by proximity rather than explicit edges — use `compare()`:
 
 ```python
 # Spatial: find wells inside structure polygons
-graph.select('Structure').compare('Well', 'contains')
+graph.select("Structure").compare("Well", "contains")
 
 # Distance: wells within 5km of each platform
-graph.select('Platform').compare('Well', {'type': 'distance', 'max_m': 5000})
+graph.select("Platform").compare("Well", {"type": "distance", "max_m": 5000})
 
 # Semantic: similar documents by embedding
-graph.select('Doc').compare('Doc',
-    {'type': 'text_score', 'property': 'summary', 'threshold': 0.7})
+graph.select("Doc").compare("Doc", {"type": "text_score", "property": "summary", "threshold": 0.7})
 ```
 
 See the [Traversal Hierarchy](traversal-hierarchy.md) guide for details
@@ -87,8 +83,7 @@ on multi-level chains, property enrichment, and grouped collection.
 After traversal, `collect_grouped()` groups leaf nodes by a parent type:
 
 ```python
-grouped = graph.select('Field').traverse('HAS_WELL') \
-    .collect_grouped('Field')
+grouped = graph.select("Field").traverse("HAS_WELL").collect_grouped("Field")
 # → {'TROLL': [{...}, ...], 'EKOFISK': [{...}, ...]}
 ```
 
@@ -99,11 +94,12 @@ Copy or aggregate properties from ancestor levels onto leaf nodes:
 ```python
 from kglite import Agg, Spatial
 
-graph.select('Structure').compare('Well', 'contains') \
-    .add_properties({
-        'Structure': {'struct_name': 'name'},     # copy + rename
-        'Well': {'n_wells': Agg.count()},         # aggregate
-    })
+graph.select("Structure").compare("Well", "contains").add_properties(
+    {
+        "Structure": {"struct_name": "name"},  # copy + rename
+        "Well": {"n_wells": Agg.count()},  # aggregate
+    }
+)
 ```
 
 See the [Traversal Hierarchy](traversal-hierarchy.md) guide for the full
@@ -112,35 +108,35 @@ enrichment API.
 ## Set Operations
 
 ```python
-n3 = graph.select('Prospect').where({'geoprovince': 'N3'})
-m3 = graph.select('Prospect').where({'geoprovince': 'M3'})
+n3 = graph.select("Prospect").where({"geoprovince": "N3"})
+m3 = graph.select("Prospect").where({"geoprovince": "M3"})
 
-n3.union(m3)                    # all nodes from both (OR)
-n3.intersection(m3)             # nodes in both (AND)
-n3.difference(m3)               # nodes in n3 but not m3
-n3.symmetric_difference(m3)     # nodes in exactly one (XOR)
+n3.union(m3)  # all nodes from both (OR)
+n3.intersection(m3)  # nodes in both (AND)
+n3.difference(m3)  # nodes in n3 but not m3
+n3.symmetric_difference(m3)  # nodes in exactly one (XOR)
 ```
 
 ## Retrieving Results
 
 ```python
-people = graph.select('Person')
+people = graph.select("Person")
 
 # Lightweight (no property materialization)
-people.len()                     # → 3
-people.indices()                        # → [0, 1, 2]
-people.ids()                      # → [1, 2, 3]
+people.len()  # → 3
+people.indices()  # → [0, 1, 2]
+people.ids()  # → [1, 2, 3]
 
 # Medium (partial materialization)
-people.titles()                     # → ['Alice', 'Bob', 'Charlie']
-people.get_properties(['age', 'city'])  # → [(28, 'Oslo'), (35, 'Bergen'), (42, 'Oslo')]
+people.titles()  # → ['Alice', 'Bob', 'Charlie']
+people.get_properties(["age", "city"])  # → [(28, 'Oslo'), (35, 'Bergen'), (42, 'Oslo')]
 
 # Full materialization
-people.collect()                      # → [{'type': 'Person', 'title': 'Alice', 'id': 1, 'age': 28, ...}, ...]
-people.to_df()                          # → DataFrame with columns type, title, id, age, city, ...
+people.collect()  # → [{'type': 'Person', 'title': 'Alice', 'id': 1, 'age': 28, ...}, ...]
+people.to_df()  # → DataFrame with columns type, title, id, age, city, ...
 
 # Single node lookup (O(1))
-graph.node('Person', 1)       # → {'type': 'Person', 'title': 'Alice', ...} or None
+graph.node("Person", 1)  # → {'type': 'Person', 'title': 'Alice', ...} or None
 ```
 
 ## Schema Introspection
@@ -169,7 +165,7 @@ s = graph.schema()
 ### `properties(node_type)` — Property details
 
 ```python
-graph.properties('Person')
+graph.properties("Person")
 # {
 #   'type':  {'type': 'str', 'non_null': 500, 'unique': 1, 'values': ['Person']},
 #   'title': {'type': 'str', 'non_null': 500, 'unique': 500},
@@ -182,7 +178,7 @@ graph.properties('Person')
 ### `neighbors_schema(node_type)` — Connection topology
 
 ```python
-graph.neighbors_schema('Person')
+graph.neighbors_schema("Person")
 # {
 #   'outgoing': [
 #     {'connection_type': 'KNOWS', 'target_type': 'Person', 'count': 1200},
@@ -197,10 +193,10 @@ graph.neighbors_schema('Person')
 ### `sample(node_type, n=5)` — Quick data peek
 
 ```python
-result = graph.sample('Person', n=3)
-result[0]          # {'type': 'Person', 'title': 'Alice', 'id': 1, 'age': 28, 'city': 'Oslo'}
-result.to_list()   # all rows as list[dict]
-result.to_df()     # as DataFrame
+result = graph.sample("Person", n=3)
+result[0]  # {'type': 'Person', 'title': 'Alice', 'id': 1, 'age': 28, 'city': 'Oslo'}
+result.to_list()  # all rows as list[dict]
+result.to_df()  # as DataFrame
 ```
 
 ### `describe()` — AI agent context
@@ -210,7 +206,7 @@ Progressive-disclosure schema description designed for AI agents. See [AI Agents
 ## Debugging Selections
 
 ```python
-result = graph.select('User').where({'id': 1001})
+result = graph.select("User").where({"id": 1001})
 print(result.explain())
 # SELECT User (1000 nodes) -> WHERE (1 nodes)
 ```
@@ -220,9 +216,7 @@ print(result.explain())
 For simpler pattern-based queries without full Cypher clause support:
 
 ```python
-results = graph.match_pattern(
-    '(p:Play)-[:HAS_PROSPECT]->(pr:Prospect)-[:BECAME_DISCOVERY]->(d:Discovery)'
-)
+results = graph.match_pattern("(p:Play)-[:HAS_PROSPECT]->(pr:Prospect)-[:BECAME_DISCOVERY]->(d:Discovery)")
 
 for match in results:
     print(f"Play: {match['p']['title']}, Discovery: {match['d']['title']}")
@@ -231,5 +225,5 @@ for match in results:
 graph.match_pattern('(u:User)-[:PURCHASED]->(p:Product {category: "Electronics"})')
 
 # Limit results for large graphs
-graph.match_pattern('(a:Person)-[:KNOWS]->(b:Person)', max_matches=100)
+graph.match_pattern("(a:Person)-[:KNOWS]->(b:Person)", max_matches=100)
 ```

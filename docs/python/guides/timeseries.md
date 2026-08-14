@@ -7,11 +7,12 @@ Attach time-indexed numeric data directly to nodes — no need to create separat
 Configure timeseries metadata per node type: resolution, channel names, units, and bin type.
 
 ```python
-graph.set_timeseries("Field",
-    resolution="month",                         # "year", "month", "day", "hour", "minute"
-    channels=["oil", "gas"],                    # channel names
-    units={"oil": "MSm3", "gas": "BSm3"},      # optional: per-channel units
-    bin_type="total",                            # optional: "total", "mean", or "sample"
+graph.set_timeseries(
+    "Field",
+    resolution="month",  # "year", "month", "day", "hour", "minute"
+    channels=["oil", "gas"],  # channel names
+    units={"oil": "MSm3", "gas": "BSm3"},  # optional: per-channel units
+    bin_type="total",  # optional: "total", "mean", or "sample"
 )
 
 graph.timeseries_config("Field")
@@ -26,15 +27,15 @@ graph.timeseries_config("Field")
 graph.add_timeseries(
     "Field",
     data=production_df,
-    fk="npdid",                              # FK column → matches node.id
-    time_key=["year", "month"],              # composite time key columns
+    fk="npdid",  # FK column → matches node.id
+    time_key=["year", "month"],  # composite time key columns
     channels={"oil": "prfOilCol", "gas": "prfGasCol"},  # channel → column
-    resolution="month",                       # required if set_timeseries() wasn't called
-    units={"oil": "MSm3"},                   # optional, merged into config
+    resolution="month",  # required if set_timeseries() wasn't called
+    units={"oil": "MSm3"},  # optional, merged into config
 )
 
 # Or manually per node
-graph.set_time_index(node_id, [[2020,1], [2020,2], [2020,3]])
+graph.set_time_index(node_id, [[2020, 1], [2020, 2], [2020, 3]])
 graph.add_ts_channel(node_id, "oil", [1.23, 1.18, 1.25])
 graph.add_ts_channel(node_id, "gas", [0.45, 0.42, 0.48])
 ```
@@ -46,20 +47,26 @@ graph.add_ts_channel(node_id, "gas", [0.45, 0.42, 0.48])
 When your DataFrame has one row per time step per entity, use the `timeseries` parameter on `add_nodes` to load nodes and timeseries in a single call:
 
 ```python
-prod_df = pd.DataFrame({
-    'field_id': ['Troll']*3 + ['Draugen']*3,
-    'field_name': ['Troll']*3 + ['Draugen']*3,
-    'date': ['2020-01', '2020-02', '2020-03']*2,
-    'oil': [100, 110, 120, 200, 210, 220],
-    'gas': [50, 55, 60, 80, 85, 90],
-})
+prod_df = pd.DataFrame(
+    {
+        "field_id": ["Troll"] * 3 + ["Draugen"] * 3,
+        "field_name": ["Troll"] * 3 + ["Draugen"] * 3,
+        "date": ["2020-01", "2020-02", "2020-03"] * 2,
+        "oil": [100, 110, 120, 200, 210, 220],
+        "gas": [50, 55, 60, 80, 85, 90],
+    }
+)
 
 # Single call — creates 2 nodes with 3 time steps each
-graph.add_nodes(prod_df, 'Production', 'field_id', 'field_name',
+graph.add_nodes(
+    prod_df,
+    "Production",
+    "field_id",
+    "field_name",
     timeseries={
-        'time': 'date',                   # date string column
-        'channels': ['oil', 'gas'],       # value columns
-    }
+        "time": "date",  # date string column
+        "channels": ["oil", "gas"],  # value columns
+    },
 )
 ```
 
@@ -75,11 +82,15 @@ The `timeseries` dict accepts:
 **Separate time columns** — when time is split across multiple columns:
 
 ```python
-graph.add_nodes(df, 'Production', 'field_id', 'field_name',
+graph.add_nodes(
+    df,
+    "Production",
+    "field_id",
+    "field_name",
     timeseries={
-        'time': {'year': 'ar', 'month': 'maned'},
-        'channels': ['oil', 'gas'],
-    }
+        "time": {"year": "ar", "month": "maned"},
+        "channels": ["oil", "gas"],
+    },
 )
 ```
 
@@ -129,7 +140,7 @@ graph.timeseries(node_id, channel="oil")
 # {'keys': [...], 'values': [...]}
 
 # Date-string range filter
-graph.timeseries(node_id, start='2020', end='2020')
+graph.timeseries(node_id, start="2020", end="2020")
 ```
 
 **Available functions:** `ts_at`, `ts_sum`, `ts_avg`, `ts_min`, `ts_max`, `ts_count`, `ts_first`, `ts_last`, `ts_series`, `ts_delta`. See the [Cypher reference](../reference/cypher-reference.md) for the full documentation.

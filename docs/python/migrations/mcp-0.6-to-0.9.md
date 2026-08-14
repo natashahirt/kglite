@@ -168,7 +168,10 @@ directly, with torch + MPS for GPU acceleration on Apple Silicon:
 ```python
 # Pre-0.9.x pattern
 from sentence_transformers import SentenceTransformer
+
 model = SentenceTransformer("BAAI/bge-m3", device="mps")
+
+
 class CustomEmbedder:
     def embed(self, texts: list[str]) -> list[list[float]]:
         return model.encode(texts).tolist()

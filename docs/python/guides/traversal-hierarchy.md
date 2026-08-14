@@ -40,10 +40,10 @@ KGLite provides two ways to move between levels:
 
 ```python
 # Edge-based: follow HAS_WELL connections
-graph.select('Field').traverse('HAS_WELL')
+graph.select("Field").traverse("HAS_WELL")
 
 # Comparison-based: find wells inside structure polygons
-graph.select('Structure').compare('Well', 'contains')
+graph.select("Structure").compare("Well", "contains")
 ```
 
 Both produce the same kind of hierarchy — the enrichment and grouping
@@ -62,12 +62,10 @@ from kglite import Agg, Spatial
 
 ```python
 # Copy 'name' and 'status' from the Field level onto Wells
-graph.select('Field').traverse('HAS_WELL') \
-    .add_properties({'Field': ['name', 'status']})
+graph.select("Field").traverse("HAS_WELL").add_properties({"Field": ["name", "status"]})
 
 # Rename while copying
-graph.select('Field').traverse('HAS_WELL') \
-    .add_properties({'Field': {'field_name': 'name'}})
+graph.select("Field").traverse("HAS_WELL").add_properties({"Field": {"field_name": "name"}})
 ```
 
 ### Aggregate across leaves
@@ -75,13 +73,16 @@ graph.select('Field').traverse('HAS_WELL') \
 Aggregate functions compute summary statistics per ancestor group:
 
 ```python
-graph.select('Structure').compare('Well', 'contains') \
-    .add_properties({'Well': {
-        'well_count': Agg.count(),         # count of wells per structure
-        'avg_depth': Agg.mean('depth'),    # mean depth per structure
-        'max_depth': Agg.max('depth'),     # deepest well per structure
-        'all_names': Agg.collect('name'),  # comma-separated well names
-    }})
+graph.select("Structure").compare("Well", "contains").add_properties(
+    {
+        "Well": {
+            "well_count": Agg.count(),  # count of wells per structure
+            "avg_depth": Agg.mean("depth"),  # mean depth per structure
+            "max_depth": Agg.max("depth"),  # deepest well per structure
+            "all_names": Agg.collect("name"),  # comma-separated well names
+        }
+    }
+)
 ```
 
 Available aggregations: `Agg.count()`, `Agg.sum(prop)`, `Agg.mean(prop)`,
@@ -92,12 +93,15 @@ Available aggregations: `Agg.count()`, `Agg.sum(prop)`, `Agg.mean(prop)`,
 When ancestors have geometry, compute spatial relationships:
 
 ```python
-graph.select('Structure').compare('Well', 'contains') \
-    .add_properties({'Structure': {
-        'dist_to_center': Spatial.distance(),    # meters from well to structure centroid
-        'struct_area': Spatial.area(),            # structure area in m²
-        'struct_perim': Spatial.perimeter(),      # perimeter in m
-    }})
+graph.select("Structure").compare("Well", "contains").add_properties(
+    {
+        "Structure": {
+            "dist_to_center": Spatial.distance(),  # meters from well to structure centroid
+            "struct_area": Spatial.area(),  # structure area in m²
+            "struct_perim": Spatial.perimeter(),  # perimeter in m
+        }
+    }
+)
 ```
 
 Available: `Spatial.distance()`, `Spatial.area()`, `Spatial.perimeter()`,
@@ -109,11 +113,12 @@ In a three-level chain (A → B → C), you can pull properties from any
 ancestor — not just the immediate parent:
 
 ```python
-graph.select('Field').traverse('HAS_BLOCK').traverse('HAS_WELL') \
-    .add_properties({
-        'Block': ['block_name'],       # from level 1 (immediate parent)
-        'Field': ['field_status'],     # from level 0 (grandparent)
-    })
+graph.select("Field").traverse("HAS_BLOCK").traverse("HAS_WELL").add_properties(
+    {
+        "Block": ["block_name"],  # from level 1 (immediate parent)
+        "Field": ["field_status"],  # from level 0 (grandparent)
+    }
+)
 ```
 
 ## Grouped collection with `collect_grouped()`
@@ -123,16 +128,14 @@ To see how leaves are grouped by an ancestor type, use `collect_grouped()`:
 
 ```python
 # Flat: all wells regardless of parent
-wells = graph.select('Field').traverse('HAS_WELL').collect()
+wells = graph.select("Field").traverse("HAS_WELL").collect()
 
 # Grouped by field
-grouped = graph.select('Field').traverse('HAS_WELL') \
-    .collect_grouped('Field')
+grouped = graph.select("Field").traverse("HAS_WELL").collect_grouped("Field")
 # → {'TROLL': [{...}, {...}], 'EKOFISK': [{...}]}
 
 # Include parent metadata
-grouped = graph.select('Field').traverse('HAS_WELL') \
-    .collect_grouped('Field', parent_info=True)
+grouped = graph.select("Field").traverse("HAS_WELL").collect_grouped("Field", parent_info=True)
 ```
 
 ## Common patterns
@@ -140,28 +143,34 @@ grouped = graph.select('Field').traverse('HAS_WELL') \
 ### Aggregate-then-export
 
 ```python
-df = graph.select('Structure').compare('Well', 'contains') \
-    .add_properties({'Well': {
-        'n_wells': Agg.count(),
-        'avg_depth': Agg.mean('depth'),
-    }}) \
+df = (
+    graph.select("Structure")
+    .compare("Well", "contains")
+    .add_properties(
+        {
+            "Well": {
+                "n_wells": Agg.count(),
+                "avg_depth": Agg.mean("depth"),
+            }
+        }
+    )
     .to_df()
+)
 ```
 
 ### Multi-hop with intermediate enrichment
 
 ```python
-graph.select('Field').traverse('HAS_BLOCK').traverse('HAS_WELL') \
-    .add_properties({
-        'Block': {'block_name': 'name'},
-        'Field': {'field_name': 'name'},
-    }) \
-    .collect()
+graph.select("Field").traverse("HAS_BLOCK").traverse("HAS_WELL").add_properties(
+    {
+        "Block": {"block_name": "name"},
+        "Field": {"field_name": "name"},
+    }
+).collect()
 ```
 
 ### Compare then group
 
 ```python
-graph.select('Structure').compare('Well', 'contains') \
-    .collect_grouped('Structure')
+graph.select("Structure").compare("Well", "contains").collect_grouped("Structure")
 ```

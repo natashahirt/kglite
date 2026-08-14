@@ -155,19 +155,26 @@ import kglite
 graph = kglite.KnowledgeGraph()
 
 # Bulk-load nodes from a DataFrame.
-people = pd.DataFrame({
-    "id":   ["alice", "bob", "eve"],
-    "name": ["Alice", "Bob", "Eve"],
-    "age":  [28, 35, 41],
-    "city": ["Oslo", "Bergen", "Trondheim"],
-})
+people = pd.DataFrame(
+    {
+        "id": ["alice", "bob", "eve"],
+        "name": ["Alice", "Bob", "Eve"],
+        "age": [28, 35, 41],
+        "city": ["Oslo", "Bergen", "Trondheim"],
+    }
+)
 graph.add_nodes(people, node_type="Person", unique_id_field="id", node_title_field="name")
 
 # Bulk-load relationships the same way.
 knows = pd.DataFrame({"src": ["alice", "bob"], "tgt": ["bob", "eve"]})
-graph.add_connections(knows, connection_type="KNOWS",
-                      source_type="Person", source_id_field="src",
-                      target_type="Person", target_id_field="tgt")
+graph.add_connections(
+    knows,
+    connection_type="KNOWS",
+    source_type="Person",
+    source_id_field="src",
+    target_type="Person",
+    target_id_field="tgt",
+)
 
 # Query — returns a ResultView (lazy; data stays in Rust until accessed).
 for row in graph.cypher("""
@@ -175,7 +182,7 @@ for row in graph.cypher("""
     RETURN p.name AS name, p.city AS city
     ORDER BY p.age DESC
 """):
-    print(row['name'], row['city'])
+    print(row["name"], row["city"])
 
 # Or get a pandas DataFrame directly.
 df = graph.cypher("MATCH (p:Person) RETURN p.name, p.age ORDER BY p.age", to_df=True)
@@ -267,18 +274,15 @@ all 14M historical filings + per-filing payload parsing for Form 4
 from kglite.datasets.sec import SEC
 
 # SEC.fetch — name the forms, the companies, a span; get a graph back.
-g = SEC.fetch("/data/sec", ["4", "8-K", "DEF 14A"], ["AAPL", "TSLA"],
-              years=2, user_agent="Your Name your@email.com")
+g = SEC.fetch("/data/sec", ["4", "8-K", "DEF 14A"], ["AAPL", "TSLA"], years=2, user_agent="Your Name your@email.com")
 
 # SEC.open — full control: separate filing-index vs. payload spans,
 # storage mode, and the include_* flags (XBRL financials, Exhibit 21
 # subsidiaries).
-g = SEC.open("/data/sec", years=10, detailed=2,
-             user_agent="Your Name your@email.com")
+g = SEC.open("/data/sec", years=10, detailed=2, user_agent="Your Name your@email.com")
 
 # Full universe — drop `companies`; auto-escalates to mode="disk".
-g = SEC.open("/data/sec", years="all", detailed=5,
-             user_agent="Your Name your@email.com")
+g = SEC.open("/data/sec", years="all", detailed=5, user_agent="Your Name your@email.com")
 ```
 
 Two dozen-plus typed node types — Company, Person, Filing,
@@ -306,10 +310,13 @@ queryable graph in one call:
 ```python
 from kglite.datasets import wikidata
 
-g = wikidata.open("/data/wd")                                    # full graph
-g = wikidata.open("/data/wd", entity_limit_millions=100)         # 100M slice
-g = wikidata.open("/data/wd", storage="memory",                  # in-memory, fast tests
-                  entity_limit_millions=10)
+g = wikidata.open("/data/wd")  # full graph
+g = wikidata.open("/data/wd", entity_limit_millions=100)  # 100M slice
+g = wikidata.open(
+    "/data/wd",
+    storage="memory",  # in-memory, fast tests
+    entity_limit_millions=10,
+)
 ```
 
 ### Sodir (Norwegian Offshore Directorate)
@@ -332,12 +339,15 @@ Combine vector similarity (`text_score()`) with Cypher pattern
 matching in one query:
 
 ```python
-graph.cypher("""
+graph.cypher(
+    """
     MATCH (c:Chunk)-[:IN_DOC]->(d:Document)
     RETURN c.text, d.title,
            text_score(c.embedding, $query_vec) AS score
     ORDER BY score DESC LIMIT 5
-""", params={"query_vec": query_embedding})
+""",
+    params={"query_vec": query_embedding},
+)
 ```
 
 Vector embeddings via `pip install 'kglite[embed]'` (adds fastembed +

@@ -11,9 +11,9 @@ from kglite.datasets.sec import SEC
 
 g = SEC.open(
     "./sec_workdir",
-    years=10,                            # historical Filing index
-    detailed=2,                          # full payload window
-    mode="mapped",                       # or "memory" / "disk"
+    years=10,  # historical Filing index
+    detailed=2,  # full payload window
+    mode="mapped",  # or "memory" / "disk"
     user_agent="Acme Research contact@acme.com",  # REQUIRED
 )
 ```

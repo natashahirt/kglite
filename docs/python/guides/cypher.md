@@ -30,7 +30,7 @@ df = graph.cypher("MATCH (n:Person) RETURN n.name, n.age ORDER BY n.age", to_df=
 ```python
 # CREATE
 result = graph.cypher("CREATE (n:Person {name: 'Alice', age: 30, city: 'Oslo'})")
-print(result.stats['nodes_created'])  # 1
+print(result.stats["nodes_created"])  # 1
 
 # SET
 graph.cypher("MATCH (n:Person {name: 'Bob'}) SET n.age = 26")
@@ -62,10 +62,7 @@ with graph.begin() as tx:
 ## Parameters
 
 ```python
-graph.cypher(
-    "MATCH (n:Person) WHERE n.age > $min_age RETURN n.name, n.age",
-    params={'min_age': 25}
-)
+graph.cypher("MATCH (n:Person) WHERE n.age > $min_age RETURN n.name, n.age", params={"min_age": 25})
 ```
 
 ## Tuning and diagnostics
@@ -89,7 +86,7 @@ zero rows. The same "did you mean?" hint interactive users see on stderr is
 exposed here for programmatic / agent callers:
 
 ```python
-r = graph.cypher("MATCH (n:Persn) RETURN n")   # typo
+r = graph.cypher("MATCH (n:Persn) RETURN n")  # typo
 r.diagnostics["warnings"]
 # ["MATCH references unknown node label 'Persn' — the graph has no such
 #   type, so this pattern returns no rows. Did you mean 'Person'?"]
@@ -140,8 +137,8 @@ If you suspect an optimizer pass changed results or regressed performance,
 disable passes by name to bisect:
 
 ```python
-kglite.cypher_pass_names()          # → ['fold_or_to_in', 'push_where_into_match.1', ...]
-graph.cypher(query, disabled_passes=['fold_or_to_in'])
+kglite.cypher_pass_names()  # → ['fold_or_to_in', 'push_where_into_match.1', ...]
+graph.cypher(query, disabled_passes=["fold_or_to_in"])
 ```
 
 Comparing a query with and without a pass is the supported way to confirm a
@@ -178,7 +175,8 @@ Concretely, this query ranks chunks by semantic similarity, then
 walks back to the parent document for provenance:
 
 ```python
-graph.cypher("""
+graph.cypher(
+    """
     MATCH (c:Chunk)-[:OF_PAGE]->(p:Page)<-[:HAS_PAGE]-(d:Document)
     WHERE text_score(c, 'text', $query) > 0.7
     RETURN d.title AS document,
@@ -187,7 +185,9 @@ graph.cypher("""
            text_score(c, 'text', $query) AS relevance
     ORDER BY relevance DESC
     LIMIT 20
-""", params={"query": "deferred revenue recognition"})
+""",
+    params={"query": "deferred revenue recognition"},
+)
 ```
 
 A vector-DB + graph-DB combo would split this into two queries — a
@@ -201,14 +201,17 @@ sees both halves at once, and the round-trip is one query.
 upstream filters narrow the set you're scoring:
 
 ```python
-graph.cypher("""
+graph.cypher(
+    """
     MATCH (c:Chunk)-[:OF_PAGE]->(p:Page)<-[:HAS_PAGE]-(d:Document)
     WHERE d.year >= 2024 AND d.publisher = 'Q4'
     WITH c, d
     WHERE text_score(c, 'text', $query) > 0.7
     RETURN d.title, c.text, text_score(c, 'text', $query) AS score
     ORDER BY score DESC LIMIT 10
-""", params={"query": "..."})
+""",
+    params={"query": "..."},
+)
 ```
 
 Cheap structural filters first → semantic scoring only on the
@@ -242,13 +245,16 @@ nodes carrying their own `by_agent` / `applied_at`. Query for the
 tagging history of a chunk:
 
 ```python
-graph.cypher("""
+graph.cypher(
+    """
     MATCH (c:Chunk {id: $cid})-[:TAGGED_AS]->(t:Tagging)-[:OF_TAG]->(tag:Tag)
     RETURN tag.name AS tag,
            t.by_agent AS agent,
            t.applied_at AS when
     ORDER BY t.applied_at DESC
-""", params={"cid": "chunk_42"})
+""",
+    params={"cid": "chunk_42"},
+)
 ```
 
 The cost is one extra node per application + two edges where you'd
@@ -302,9 +308,9 @@ MATCH (n:Article {id: $id}) SET n.type = 'BlogPost'
 From Python, the same surface is available without Cypher:
 
 ```python
-g.add_nodes(df, 'Agent', 'id', 'name', labels=['Reviewer'])
-g.add_label('Agent', ['agent-7'], 'OnCall')
-g.remove_label('Agent', ['agent-7'], 'OnCall')
+g.add_nodes(df, "Agent", "id", "name", labels=["Reviewer"])
+g.add_label("Agent", ["agent-7"], "OnCall")
+g.remove_label("Agent", ["agent-7"], "OnCall")
 ```
 
 ### Use multi-label or subtype edges?
@@ -408,8 +414,8 @@ raises `DirectionMismatch` with a suggestion to use
 For per-procedure docs (params, examples), drill in:
 
 ```python
-g.describe(cypher=['orphan_node'])
-g.describe(cypher=['missing_required_edge'])
+g.describe(cypher=["orphan_node"])
+g.describe(cypher=["missing_required_edge"])
 ```
 
 See the [full Cypher reference](../reference/cypher-reference.md) for detailed examples of every feature.

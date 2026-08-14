@@ -46,10 +46,12 @@ across all of them in one sweep — plain docs are skipped, each project's tree
 becomes `Folder` nodes, and concept ids stay path-relative so they don't collide:
 
 ```python
-g = okf.build("~/code", dialect="obsidian")   # require_frontmatter=True
-g.cypher("MATCH (f:Folder)-[:CONTAINS]->(m) "
-         "RETURN split(m.concept_id, '/')[0] AS project, count(m) AS memories "
-         "ORDER BY memories DESC")
+g = okf.build("~/code", dialect="obsidian")  # require_frontmatter=True
+g.cypher(
+    "MATCH (f:Folder)-[:CONTAINS]->(m) "
+    "RETURN split(m.concept_id, '/')[0] AS project, count(m) AS memories "
+    "ORDER BY memories DESC"
+)
 ```
 
 Node labels fall back `type` → `metadata.type` → `Concept`, so Claude memories
@@ -116,21 +118,21 @@ g = okf.build("~/.claude/.../memory", dialect="obsidian")
 
 # Orphaned memories: no *semantic* edge (every concept has a structural
 # CONTAINS from its Folder and TAGGED edges, so exclude those).
-g.cypher("MATCH (n) WHERE n.concept_id IS NOT NULL "
-         "OPTIONAL MATCH (n)-[r]-() WHERE NOT type(r) IN ['CONTAINS', 'TAGGED'] "
-         "WITH n, count(r) AS d WHERE d = 0 RETURN n.concept_id")
+g.cypher(
+    "MATCH (n) WHERE n.concept_id IS NOT NULL "
+    "OPTIONAL MATCH (n)-[r]-() WHERE NOT type(r) IN ['CONTAINS', 'TAGGED'] "
+    "WITH n, count(r) AS d WHERE d = 0 RETURN n.concept_id"
+)
 
 # Dangling [[links]] — references to knowledge not yet written
 g.cypher("MATCH (n {_provisional: true}) RETURN n.concept_id")
 
 # Most-referenced sources, and memories grouped by tag
-g.cypher("MATCH (:Concept)-[:CITES]->(s:Source) "
-         "RETURN s.id, count(*) AS cited ORDER BY cited DESC")
+g.cypher("MATCH (:Concept)-[:CITES]->(s:Source) RETURN s.id, count(*) AS cited ORDER BY cited DESC")
 g.cypher("MATCH (c)-[:TAGGED]->(t:Tag) RETURN t.id, collect(c.title)")
 
 # Cluster memories into themes (the OKF → GraphRAG indexing story)
-g.cypher("CALL leiden() YIELD node, community "
-         "RETURN community, collect(node.title) ORDER BY community")
+g.cypher("CALL leiden() YIELD node, community RETURN community, collect(node.title) ORDER BY community")
 
 # Read one concept's prose once a query has narrowed to it
 body = okf.source("~/.claude/.../memory/some-fact.md")

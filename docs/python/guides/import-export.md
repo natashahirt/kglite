@@ -16,9 +16,9 @@ entry point: it loads the graph if the file exists and creates a fresh one if
 it doesn't, and the returned graph **remembers the path**.
 
 ```python
-g = kglite.open("app.kgl")          # loads if present, else creates
+g = kglite.open("app.kgl")  # loads if present, else creates
 g.cypher("CREATE (:Person {name: 'Alice'})")
-g.save()                             # no path needed — writes back to app.kgl
+g.save()  # no path needed — writes back to app.kgl
 ```
 
 Use it as a context manager to auto-save on clean exit:
@@ -54,7 +54,7 @@ with kglite.open("app.kgl", durable=True) as g:
 
 # A later run recovers automatically, even after a crash with no save():
 g = kglite.open("app.kgl", durable=True)
-g.cypher("MATCH (p:Person) RETURN p.name")   # -> Alice
+g.cypher("MATCH (p:Person) RETURN p.name")  # -> Alice
 ```
 
 - `save()` writes a full `.kgl` checkpoint and truncates the WAL. A durable
@@ -69,12 +69,12 @@ g.cypher("MATCH (p:Person) RETURN p.name")   # -> Alice
 ## Export Formats
 
 ```python
-graph.export('my_graph.graphml', format='graphml')  # Gephi, yEd
-graph.export('my_graph.gexf', format='gexf')        # Gephi native
-graph.export('my_graph.json', format='d3')           # D3.js
-graph.export('my_graph.csv', format='csv')           # creates _nodes.csv + _edges.csv
+graph.export("my_graph.graphml", format="graphml")  # Gephi, yEd
+graph.export("my_graph.gexf", format="gexf")  # Gephi native
+graph.export("my_graph.json", format="d3")  # D3.js
+graph.export("my_graph.csv", format="csv")  # creates _nodes.csv + _edges.csv
 
-graphml_string = graph.export_string(format='graphml')
+graphml_string = graph.export_string(format="graphml")
 ```
 
 ## NetworkX Interop
@@ -92,19 +92,18 @@ Requires the `networkx` extra: `pip install kglite[networkx]`.
 import networkx as nx
 
 # Export, run an algorithm, write the scores back.
-nxg = graph.to_networkx()              # -> nx.MultiDiGraph
-scores = nx.pagerank(nxg)               # {node_id: rank} (pagerank needs scipy)
+nxg = graph.to_networkx()  # -> nx.MultiDiGraph
+scores = nx.pagerank(nxg)  # {node_id: rank} (pagerank needs scipy)
 
 import pandas as pd
-df = pd.DataFrame(
-    [{'id': nid, 'pagerank': rank} for nid, rank in scores.items()]
-)
+
+df = pd.DataFrame([{"id": nid, "pagerank": rank} for nid, rank in scores.items()])
 # Update existing nodes in place (matched by id), or with Cypher SET:
-graph.add_nodes(df, 'Person', 'id', conflict_handling='update')
+graph.add_nodes(df, "Person", "id", conflict_handling="update")
 # graph.cypher("MATCH (n) WHERE n.id = $id SET n.pagerank = $r", ...)
 
 # Import a plain networkx graph (defaults applied where attrs are absent).
-g2 = kglite.from_networkx(nxg, default_node_type='Node', default_edge_type='RELATED')
+g2 = kglite.from_networkx(nxg, default_node_type="Node", default_edge_type="RELATED")
 ```
 
 `from_networkx()` accepts `Graph` / `DiGraph` / `MultiGraph` /
@@ -126,8 +125,8 @@ report = kglite.to_neo4j(
     g,
     "bolt://localhost:7687",
     auth=("neo4j", "password"),
-    clear=False,    # set True to wipe the target DB first
-    merge=False,    # set True for MERGE (upsert) instead of CREATE
+    clear=False,  # set True to wipe the target DB first
+    merge=False,  # set True for MERGE (upsert) instead of CREATE
     batch_size=5000,
 )
 # {'nodes_created': ..., 'relationships_created': ..., 'elapsed': ..., 'database': 'neo4j'}
@@ -147,7 +146,7 @@ incrementally from several sources or merge two loaded `.kgl` files.
 g1 = kglite.load("source_a.kgl")
 g2 = kglite.load("source_b.kgl")
 
-report = g1.extend(g2)              # g2 folded into g1; g2 untouched
+report = g1.extend(g2)  # g2 folded into g1; g2 untouched
 report = g1.extend(g2, "preserve")  # on conflict, existing g1 values win
 ```
 
@@ -162,13 +161,8 @@ not merged** — re-run `set_embeddings` / `add_embeddings` after the merge.
 ## Subgraph Extraction
 
 ```python
-subgraph = (
-    graph.select('Company')
-    .where({'title': 'Acme Corp'})
-    .expand(hops=2)
-    .to_subgraph()
-)
-subgraph.export('acme_network.graphml', format='graphml')
+subgraph = graph.select("Company").where({"title": "Acme Corp"}).expand(hops=2).to_subgraph()
+subgraph.export("acme_network.graphml", format="graphml")
 ```
 
 ## Embedding Snapshots
@@ -184,14 +178,17 @@ stats = graph.export_embeddings("embeddings.kgle")
 graph.export_embeddings("embeddings.kgle", ["Article"])
 
 # Export specific (node_type, property) pairs
-graph.export_embeddings("embeddings.kgle", {
-    "Article": ["summary", "title"],
-    "Author": [],                     # all embedding properties for Author
-})
+graph.export_embeddings(
+    "embeddings.kgle",
+    {
+        "Article": ["summary", "title"],
+        "Author": [],  # all embedding properties for Author
+    },
+)
 
 # Import into a fresh graph — matches by (node_type, node_id)
 graph2 = kglite.KnowledgeGraph()
-graph2.add_nodes(articles_df, 'Article', 'id', 'title')
+graph2.add_nodes(articles_df, "Article", "id", "title")
 result = graph2.import_embeddings("embeddings.kgle")
 # {'stores': 2, 'imported': 4800, 'skipped': 200}
 ```
@@ -201,18 +198,18 @@ result = graph2.import_embeddings("embeddings.kgle")
 ### Schema Definition
 
 ```python
-graph.define_schema({
-    'nodes': {
-        'Prospect': {
-            'required': ['npdid_prospect', 'prospect_name'],
-            'optional': ['prospect_status'],
-            'types': {'npdid_prospect': 'integer', 'prospect_name': 'string'}
-        }
-    },
-    'connections': {
-        'HAS_ESTIMATE': {'source': 'Prospect', 'target': 'ProspectEstimate'}
+graph.define_schema(
+    {
+        "nodes": {
+            "Prospect": {
+                "required": ["npdid_prospect", "prospect_name"],
+                "optional": ["prospect_status"],
+                "types": {"npdid_prospect": "integer", "prospect_name": "string"},
+            }
+        },
+        "connections": {"HAS_ESTIMATE": {"source": "Prospect", "target": "ProspectEstimate"}},
     }
-})
+)
 
 errors = graph.validate_schema()
 schema = graph.schema_text()
@@ -230,12 +227,12 @@ Two index types:
 Both also accelerate Cypher `WHERE` clauses. Composite indexes support multi-property equality.
 
 ```python
-graph.create_index('Prospect', 'prospect_geoprovince')        # equality index
-graph.create_range_index('Person', 'age')                      # B-Tree range index
-graph.create_composite_index('Person', ['city', 'age'])        # composite equality
+graph.create_index("Prospect", "prospect_geoprovince")  # equality index
+graph.create_range_index("Person", "age")  # B-Tree range index
+graph.create_composite_index("Person", ["city", "age"])  # composite equality
 
 graph.list_indexes()
-graph.drop_index('Prospect', 'prospect_geoprovince')
+graph.drop_index("Prospect", "prospect_geoprovince")
 ```
 
 Indexes are maintained automatically by all mutation operations.
@@ -272,7 +269,7 @@ info = graph.graph_info()
 # {'node_count': 950, 'node_capacity': 1000, 'node_tombstones': 50,
 #  'edge_count': 2800, 'fragmentation_ratio': 0.05, ...}
 
-if info['fragmentation_ratio'] > 0.3:
+if info["fragmentation_ratio"] > 0.3:
     result = graph.vacuum()
     print(f"Reclaimed {result['tombstones_removed']} slots")
 ```
