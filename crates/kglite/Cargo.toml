@@ -5,7 +5,7 @@
 #   kglite = { path = "..." }  # pre-publish
 #   kglite = "0.10"            # post-crates.io-publish
 name = "kglite"
-version = "0.10.27"
+version = "0.10.28"
 edition = "2021"
 authors = ["Kristian dF Kollsgård <kkollsg@gmail.com>"]
 license = "MIT"
@@ -154,6 +154,11 @@ tree-sitter-julia = "0.23.1"
 toml = "1.1.2"
 roxmltree = "0.21.1"
 walkdir = "2.5.0"
+# ripgrep's walker. Used for ONE thing: honoring .gitignore during the build
+# walk, so generated output (build/, site/, coverage reports) stays out of the
+# graph. Reimplementing gitignore semantics — negations, nesting, anchoring —
+# is exactly the kind of thing that looks right until it silently isn't.
+ignore = "0.4.23"
 tempfile = "3"
 aho-corasick = "1.1.4"
 memchr = "2"

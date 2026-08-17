@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.28] — 2026-08-17 — the build walk honors `.gitignore`
+
+### Changed
+
+- **`code_tree.build()` now skips paths the repo's `.gitignore` excludes.**
+  Generated output was being parsed as source, and it is the kind of junk that
+  looks legitimate: a built docs site is thousands of real HTML files, a wheel
+  `build/` holds real copies of real modules. On the angelo repo this was not a
+  rounding error — `build/` and `site/` were 50% of indexed files and owned
+  **99.9% of `Element` and 95% of `Selector` nodes**:
+
+  | | before | after |
+  |---|---|---|
+  | total nodes | 366,499 | 27,410 |
+  | `Element` nodes | 220,360 | 136 |
+  | `Selector` nodes | 88,900 | 4,384 |
+  | build time | 7.5s | 1.1s |
+
+  The duplicate-id warnings on `Element`/`Selector` came from the same source —
+  dozens of stale hashed copies of one CSS bundle under `build/lib/` — and drop
+  from 110,180 to 68.
+
+  Name-based filtering cannot do this job, which is why the ignore list still
+  omits `build`/`dist`/`out`: those names are ambiguous, and a `dist/` may be
+  committed build output a project deliberately ships (as the angelo dashboards'
+  bundled UI is). The repo's own ignore file is the only authoritative signal.
+  The existing name list (`node_modules`, `target`, `venv`, …) still applies, for
+  trees that carry no ignore file at all.
+
+  Rules resolve against the **project root**, not the directory being walked — a
+  manifest-declared source root is often a subdirectory, so the root
+  `.gitignore` is a *parent* of that walk and would otherwise be skipped or
+  re-anchored to the wrong place. The user's global gitignore is deliberately not
+  consulted: a graph's contents must depend on the repo, not on the machine.
+
+  Known edge, matching `rg`/`fd` rather than git: a file that matches an ignore
+  pattern but is nonetheless tracked is skipped. Scratch patterns like
+  `/tests/_*.py` also match a committed `__init__.py`; git keeps it by consulting
+  the index, which a walker has no access to. Reading the index would buy back a
+  package marker at the cost of missing brand-new untracked source.
+
 ## [0.10.26] — 2026-06-16 — MCP server bundled into the wheel + native query preprocessor
 
 ### Added

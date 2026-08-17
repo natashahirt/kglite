@@ -16,7 +16,6 @@ use crate::graph::dir_graph::DirGraph;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use walkdir::WalkDir;
 
 /// Graph node label for a `ClassInfo`, keyed on its `kind` discriminator.
 /// `struct` → `Struct`, `mixin` (Dart) → `Mixin`; everything else →
@@ -32,6 +31,82 @@ pub(crate) fn class_node_type(kind: &str) -> &'static str {
         "mixin" => "Mixin",
         _ => "Class",
     }
+}
+
+/// Walk `walk_dir` for source files, skipping generated and vendored trees.
+///
+/// Two filters, because neither alone is sufficient:
+///
+/// 1. **`.gitignore`** — the repo's own authoritative statement of what is not
+///    source. This is what keeps `build/`, `site/`, coverage output, and caches
+///    out of the graph. Name-based guessing cannot do this job: `build` and
+///    `dist` are ambiguous (a `dist/` may be committed build output that the
+///    project deliberately ships, as the dashboards' bundled UI is), so the only
+///    reliable signal is the one the repo states itself.
+/// 2. **[`is_ignored_dir_name`](crate::code_tree::manifest::is_ignored_dir_name)** —
+///    `node_modules`, `target`, `venv`, … Still needed: those are frequently
+///    present in trees with no `.gitignore` at all (a vendored dependency, an
+///    extracted tarball, a supplemental source root).
+///
+/// Ignore rules are resolved against `project_root`, NOT `walk_dir`, and that
+/// distinction is the whole point: a manifest-declared source root is often a
+/// subdirectory, so the repo's root `.gitignore` is a *parent* of the walk. Left
+/// to the walker's own parent traversal, a rule like `/site/` would either be
+/// skipped entirely (indexing the very output it excludes) or be re-anchored to
+/// the wrong directory. Matching each candidate against a matcher built at
+/// `project_root` keeps anchored and nested patterns meaning what the repo says
+/// they mean regardless of where the walk starts.
+///
+/// The user's global gitignore is deliberately NOT consulted: a graph's contents
+/// must depend on the repo being parsed, not on the machine parsing it.
+///
+/// Known edge, worth stating because it bites on real repos: a file that matches
+/// an ignore pattern but is nonetheless TRACKED is skipped. Ignore files commonly
+/// carry scratch patterns like `/tests/_*.py`, which also matches a committed
+/// `__init__.py`. Git keeps that file because it consults the index and never
+/// un-tracks a tracked path; this walk has no index, so it goes by the pattern.
+/// That is the same trade `rg` and `fd` make, and the alternative — reading the
+/// index — buys back a package marker at the cost of a git dependency and of
+/// missing brand-new untracked source, which matters far more for a
+/// working-tree graph.
+fn source_walk(walk_dir: &Path, project_root: &Path) -> Vec<PathBuf> {
+    let mut ignores = ignore::gitignore::GitignoreBuilder::new(project_root);
+    // `add` returns Some(err) on a malformed pattern; a bad ignore file must
+    // degrade to "nothing ignored", never abort the build.
+    ignores.add(project_root.join(".gitignore"));
+    ignores.add(project_root.join(".git/info/exclude"));
+    let ignores = ignores
+        .build()
+        .unwrap_or_else(|_| ignore::gitignore::Gitignore::empty());
+
+    ignore::WalkBuilder::new(walk_dir)
+        .hidden(true)
+        .git_ignore(true)
+        .git_exclude(true)
+        .git_global(false)
+        .parents(false)
+        .require_git(false)
+        .filter_entry(move |entry| {
+            let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+            if is_dir
+                && entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(crate::code_tree::manifest::is_ignored_dir_name)
+            {
+                return false;
+            }
+            // `_or_any_parents` so a walk that STARTS inside an ignored tree (a
+            // manifest source root under `build/`) is caught at its own root.
+            !ignores
+                .matched_path_or_any_parents(entry.path(), is_dir)
+                .is_ignore()
+        })
+        .build()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
+        .map(|entry| entry.into_path())
+        .collect()
 }
 
 /// Full `build()` entry point matching the Python API.
@@ -174,19 +249,9 @@ fn parse_directory(
     // any depth (`.venv`, `target`, `node_modules`, `__pycache__`, …).
     // Without this, a supplemental source root pointing to a directory
     // with a nested venv would index every site-package's Python source.
-    for entry in WalkDir::new(walk_dir)
-        .into_iter()
-        .filter_entry(crate::code_tree::manifest::walk_filter)
-        .filter_map(Result::ok)
-    {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        if let Some(lang) = language_for_path(entry.path()) {
-            by_lang
-                .entry(lang)
-                .or_default()
-                .push(entry.path().to_path_buf());
+    for entry in source_walk(walk_dir, project_root) {
+        if let Some(lang) = language_for_path(&entry) {
+            by_lang.entry(lang).or_default().push(entry);
         }
     }
     if verbose {
